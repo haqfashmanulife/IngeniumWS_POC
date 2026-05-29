@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-test('✅ Ingenium Policy Inquiry Flow - ULTIMATE STABLE', async ({ page }) => {
+test('✅ Ingenium Policy Inquiry Flow - FINAL FIXED', async ({ page }) => {
 
   const BASE_URL   = process.env.APP_URL;
   const USERNAME   = process.env.APP_USERNAME;
@@ -11,93 +11,78 @@ test('✅ Ingenium Policy Inquiry Flow - ULTIMATE STABLE', async ({ page }) => {
   expect(POLICY_ID).toBeTruthy();
 
   // ======================================================
-  // UTIL: FRAME FINDER
+  // FRAME FINDER
   // ======================================================
-  async function findFrame(page, predicate, retries = 10, delay = 2000) {
+  async function findFrame(page, predicate, retries = 10) {
     for (let i = 0; i < retries; i++) {
       for (const f of page.frames()) {
         try {
           if (await predicate(f)) return f;
         } catch {}
       }
-      console.log(`⏳ Frame retry ${i + 1}/${retries}`);
-      await page.waitForTimeout(delay);
+      await page.waitForTimeout(2000);
     }
     throw new Error('❌ Frame not found');
   }
 
   // ======================================================
-  // UTIL: SAFE CLICK (DOM)
+  // SAFE CLICK
   // ======================================================
-  async function safeClick(locator) {
-    try {
-      await locator.first().waitFor({ state: 'visible', timeout: 5000 });
-      await locator.first().scrollIntoViewIfNeeded();
-      await locator.first().click({ force: true });
-      return true;
-    } catch {
-      return false;
+  async function safeClick(locator, retries = 5) {
+    for (let i = 0; i < retries; i++) {
+      try {
+        await locator.first().waitFor({ state: 'visible', timeout: 5000 });
+        await locator.first().scrollIntoViewIfNeeded();
+        await locator.first().click({ force: true });
+        return;
+      } catch {
+        console.log(`⚠️ Retry click ${i + 1}`);
+        await page.waitForTimeout(2000);
+      }
     }
+    return false;
   }
 
   // ======================================================
-  // UTIL: SMART OK CLICK (CRITICAL)
+  // SMART OK CLICK (FIXED)
   // ======================================================
   async function clickOK(page) {
 
-    console.log("🔍 Trying DOM click...");
+    console.log("🔍 Trying OK click...");
 
-    // 1️⃣ Try normal DOM click
-    const okLocator = page.locator(
-      'button:has-text("OK"), input[value="OK"], text=OK'
-    );
+    const okLocator =
+      page.locator('button:has-text("OK"), input[value="OK"]')
+          .or(page.locator('text=OK'));
 
-    if (await okLocator.count() > 0) {
+    try {
       const success = await safeClick(okLocator);
       if (success) {
         console.log("✅ OK clicked via locator");
         return;
       }
-    }
+    } catch {}
 
-    console.log("⚠️ Locator click failed → trying frame scan...");
+    console.log("⚠️ Locator failed → fallback to coordinates");
 
-    // 2️⃣ Try inside any frame
-    for (const f of page.frames()) {
-      try {
-        const btn = f.locator('button:has-text("OK"), input[value="OK"]');
-        if (await btn.count() > 0) {
-          await btn.first().click({ force: true });
-          console.log("✅ OK clicked via frame");
-          return;
-        }
-      } catch {}
-    }
+    const vp = page.viewportSize();
 
-    console.log("⚠️ Frame click failed → using coordinates...");
-
-    // 3️⃣ FINAL GUARANTEED fallback → coordinate click
-    const viewport = page.viewportSize();
-
-    const x = Math.floor(viewport.width / 2);
-    const y = Math.floor(viewport.height - 40);
-
-    console.log(`🖱 Clicking at (${x}, ${y})`);
+    const x = Math.floor(vp.width / 2);
+    const y = Math.floor(vp.height - 40);
 
     await page.mouse.click(x, y);
 
-    console.log("✅ OK clicked via coordinates (guaranteed)");
+    console.log("✅ OK clicked via coordinates");
   }
 
   // ======================================================
-  // STEP 1: Launch
+  // STEP 1
   // ======================================================
   await page.goto(BASE_URL, { waitUntil: 'networkidle' });
 
   await page.screenshot({ path: 'screenshots/01-launch.png', fullPage: true });
 
   // ======================================================
-  // STEP 2: English
+  // STEP 2
   // ======================================================
   const english = page.getByText('English Sign On');
 
@@ -109,7 +94,7 @@ test('✅ Ingenium Policy Inquiry Flow - ULTIMATE STABLE', async ({ page }) => {
   await page.waitForTimeout(5000);
 
   // ======================================================
-  // STEP 3: LOGIN FRAME
+  // STEP 3
   // ======================================================
   const loginFrame = await findFrame(page, f =>
     f.locator('input[type="password"]').count()
@@ -118,53 +103,42 @@ test('✅ Ingenium Policy Inquiry Flow - ULTIMATE STABLE', async ({ page }) => {
   console.log("✅ Login frame found");
 
   // ======================================================
-  // STEP 4: LOGIN
+  // STEP 4
   // ======================================================
   await loginFrame.locator('input[type="text"]').first().fill(USERNAME);
   await loginFrame.locator('input[type="password"]').fill(PASSWORD);
-
   await loginFrame.locator('select').selectOption({ label: COMPANY });
 
   await loginFrame.getByRole('button', { name: /submit/i }).click();
 
-  console.log("✅ Login submitted");
-
   await page.waitForTimeout(6000);
 
-  await page.screenshot({ path: 'screenshots/02-after-login.png', fullPage: true });
-
   // ======================================================
-  // STEP 5: POPUP OK
+  // STEP 5
   // ======================================================
   await clickOK(page);
 
   await page.waitForTimeout(8000);
 
   // ======================================================
-  // STEP 6: APP FRAME
+  // STEP 6
   // ======================================================
   const appFrame = await findFrame(page, f =>
     f.locator('span[title="Policy Inquiry"]').count()
   );
 
-  console.log("✅ App frame ready");
-
-  // ======================================================
-  // STEP 7: MENU NAVIGATION
-  // ======================================================
   await appFrame.locator('span[title="Policy Inquiry"]').click();
 
-  await appFrame
-    .locator('a')
+  await appFrame.locator('a')
     .filter({ hasText: 'Policy Inquiry - All Details' })
     .click();
 
-  console.log("✅ Navigation done");
+  console.log("✅ Navigation successful");
 
   await page.waitForTimeout(6000);
 
   // ======================================================
-  // STEP 8: FORM FRAME
+  // STEP 7
   // ======================================================
   const formFrame = await findFrame(page, f =>
     f.locator('input').count()
@@ -172,23 +146,24 @@ test('✅ Ingenium Policy Inquiry Flow - ULTIMATE STABLE', async ({ page }) => {
 
   await formFrame.locator('input').first().fill(POLICY_ID);
 
-  console.log("✅ Policy ID entered:", POLICY_ID);
+  console.log("✅ Policy entered:", POLICY_ID);
 
   await page.waitForTimeout(3000);
 
   // ======================================================
-  // ✅ STEP 9: CLICK OK (100% GUARANTEED)
+  // STEP 8 (FINAL OK)
   // ======================================================
   await clickOK(page);
 
   await page.waitForTimeout(8000);
 
   // ======================================================
-  // STEP 10: FINAL SCREENSHOT
+  // STEP 9
   // ======================================================
-  const path = `screenshots/policy-${POLICY_ID}.png`;
+  await page.screenshot({
+    path: `screenshots/policy-${POLICY_ID}.png`,
+    fullPage: true
+  });
 
-  await page.screenshot({ path, fullPage: true });
-
-  console.log(`✅ DONE: ${path}`);
+  console.log("✅ SUCCESS");
 });
