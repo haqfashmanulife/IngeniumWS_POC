@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-test('✅ FINAL Ingenium Policy Inquiry Flow (Fully Stable)', async ({ page }) => {
+test('✅ FINAL Ingenium Policy Inquiry Flow (Stable)', async ({ page }) => {
 
   const BASE_URL   = process.env.APP_URL;
   const USERNAME   = process.env.APP_USERNAME;
@@ -11,7 +11,7 @@ test('✅ FINAL Ingenium Policy Inquiry Flow (Fully Stable)', async ({ page }) =
   expect(POLICY_ID).toBeTruthy();
 
   // ======================================================
-  // UTIL: FRAME FINDER (retry + detach safe)
+  // FRAME FINDER
   // ======================================================
   async function findFrame(page, predicate, retries = 10, delay = 2000) {
     for (let i = 0; i < retries; i++) {
@@ -27,7 +27,7 @@ test('✅ FINAL Ingenium Policy Inquiry Flow (Fully Stable)', async ({ page }) =
   }
 
   // ======================================================
-  // UTIL: SAFE CLICK (handles legacy UI issues)
+  // SAFE CLICK
   // ======================================================
   async function safeClick(locator, retries = 5) {
     for (let i = 0; i < retries; i++) {
@@ -38,7 +38,6 @@ test('✅ FINAL Ingenium Policy Inquiry Flow (Fully Stable)', async ({ page }) =
       } catch {
         console.log(`⚠️ Click retry ${i + 1}`);
 
-        // fallback to force click via mouse
         try {
           const box = await locator.first().boundingBox();
           if (box) {
@@ -79,11 +78,11 @@ test('✅ FINAL Ingenium Policy Inquiry Flow (Fully Stable)', async ({ page }) =
     return await f.locator('input[type="password"]').count() > 0;
   });
 
+  console.log("✅ Login frame found");
+
   // ======================================================
   // STEP 4: LOGIN
   // ======================================================
-  console.log("✅ Login frame found");
-
   await loginFrame.locator('input[type="text"]').first().fill(USERNAME);
   await loginFrame.locator('input[type="password"]').fill(PASSWORD);
   await loginFrame.locator('select').selectOption({ label: COMPANY });
@@ -92,13 +91,12 @@ test('✅ FINAL Ingenium Policy Inquiry Flow (Fully Stable)', async ({ page }) =
 
   console.log("✅ Login submitted");
 
-  await page.waitForLoadState('networkidle').catch(() => {});
   await page.waitForTimeout(5000);
 
   await page.screenshot({ path: 'screenshots/02-after-login.png', fullPage: true });
 
   // ======================================================
-  // STEP 5: HANDLE OK POPUP
+  // STEP 5: OK POPUP AFTER LOGIN ✅
   // ======================================================
   try {
     const popupFrame = await findFrame(page, async (f) => {
@@ -109,14 +107,13 @@ test('✅ FINAL Ingenium Policy Inquiry Flow (Fully Stable)', async ({ page }) =
 
     console.log("✅ Clicked OK popup");
 
-    await page.waitForLoadState('networkidle').catch(() => {});
     await page.waitForTimeout(8000);
   } catch {
     console.log("✅ No popup");
   }
 
   // ======================================================
-  // STEP 6: APP FRAME (LEFT MENU)
+  // STEP 6: APP FRAME
   // ======================================================
   const appFrame = await findFrame(page, async (f) => {
     return await f.locator('span[title="Policy Inquiry"]').count() > 0;
@@ -125,7 +122,7 @@ test('✅ FINAL Ingenium Policy Inquiry Flow (Fully Stable)', async ({ page }) =
   console.log("✅ App frame ready");
 
   // ======================================================
-  // STEP 7: LEFT MENU NAVIGATION ✅
+  // STEP 7: NAVIGATION
   // ======================================================
   await safeClick(appFrame.locator('span[title="Policy Inquiry"]'));
 
@@ -135,11 +132,10 @@ test('✅ FINAL Ingenium Policy Inquiry Flow (Fully Stable)', async ({ page }) =
 
   console.log("✅ Navigation successful");
 
-  await page.waitForLoadState('networkidle').catch(() => {});
   await page.waitForTimeout(5000);
 
   // ======================================================
-  // STEP 8: FORM FRAME (INPUT FIELD)
+  // STEP 8: FORM FRAME
   // ======================================================
   const formFrame = await findFrame(page, async (f) => {
     return await f.locator('input').count() > 0;
@@ -149,31 +145,38 @@ test('✅ FINAL Ingenium Policy Inquiry Flow (Fully Stable)', async ({ page }) =
 
   console.log("✅ Policy ID entered:", POLICY_ID);
 
-  // ======================================================
-  // STEP 9: FOOTER FRAME (OK BUTTON) ✅ CRITICAL FIX
-  // ======================================================
-  const footerFrame = await findFrame(page, async (f) => {
-    return await f.locator(
-      'button:has-text("OK"), input[value="OK"]'
-    ).count() > 0;
-  });
-
-  console.log("✅ Footer frame found");
-
-  await safeClick(
-    footerFrame.locator('button:has-text("OK"), input[value="OK"]')
-  );
-
-  console.log("✅ OK button clicked");
+  await page.waitForTimeout(3000);
 
   // ======================================================
-  // STEP 10: WAIT FOR RESULT
+  // ✅ STEP 9: OK CLICK (SAME LOGIC AS LOGIN POPUP)
   // ======================================================
-  await page.waitForLoadState('networkidle').catch(() => {});
-  await page.waitForTimeout(6000);
+  try {
+    const okFrame = await findFrame(page, async (f) => {
+      return await f.getByRole('button', { name: 'OK' }).count() > 0;
+    }, 5, 2000);
+
+    await safeClick(okFrame.getByRole('button', { name: 'OK' }));
+
+    console.log("✅ Clicked OK after policy");
+
+    await page.waitForTimeout(6000);
+
+  } catch {
+    console.log("⚠️ OK not found in frame → fallback click");
+
+    const vp = page.viewportSize();
+    if (vp) {
+      const x = Math.floor(vp.width / 2);
+      const y = Math.floor(vp.height - 40);
+
+      await page.mouse.click(x, y);
+
+      console.log("✅ OK clicked via fallback");
+    }
+  }
 
   // ======================================================
-  // STEP 11: SCREENSHOT
+  // STEP 10: FINAL SCREENSHOT
   // ======================================================
   const path = `screenshots/policy-${POLICY_ID}.png`;
 
