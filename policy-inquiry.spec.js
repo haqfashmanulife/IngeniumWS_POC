@@ -36,9 +36,13 @@ test('✅ STABLE Ingenium Policy Inquiry Flow', async ({ page }) => {
   let loginFrame = null;
 
   for (const f of page.frames()) {
-    if (await f.locator('input[type="password"]').count() > 0) {
-      loginFrame = f;
-      break;
+    try {
+      if (await f.locator('input[type="password"]').count() > 0) {
+        loginFrame = f;
+        break;
+      }
+    } catch {
+      // Frame detached mid-scan — skip it.
     }
   }
 
@@ -65,26 +69,46 @@ test('✅ STABLE Ingenium Policy Inquiry Flow', async ({ page }) => {
   // ======================================================
   // STEP 5: Handle OK popup
   // ======================================================
+  // Clicking OK triggers a navigation/reload that DETACHES the other
+  // frames. So: stop scanning immediately after the click (break), guard
+  // each frame access against detachment, then wait for the reload to
+  // settle (~10s) before touching frames again.
   for (const f of page.frames()) {
-    if (await f.getByRole('button', { name: 'OK' }).count() > 0) {
-      try {
-        await f.getByRole('button', { name: 'OK' }).click();
+    try {
+      const okBtn = f.getByRole('button', { name: 'OK' });
+      if (await okBtn.count() > 0) {
+        await okBtn.first().click();
         console.log("✅ Clicked OK popup");
-      } catch {}
+        break;
+      }
+    } catch {
+      console.log("⚠️ Skipped detached frame during OK scan");
     }
   }
 
-  await page.waitForTimeout(3000);
+  // Page reloads after OK and takes ~10s to render the next view.
+  await page.waitForLoadState('networkidle').catch(() => {});
+  await page.waitForTimeout(10000);
 
   // ======================================================
-  // STEP 6: Find APP FRAME
+  // STEP 6: Find APP FRAME (retry until frames settle)
   // ======================================================
   let appFrame = null;
 
-  for (const f of page.frames()) {
-    if (await f.locator('text=Policy Inquiry').count() > 0) {
-      appFrame = f;
-      break;
+  for (let attempt = 0; attempt < 5 && !appFrame; attempt++) {
+    for (const f of page.frames()) {
+      try {
+        if (await f.locator('text=Policy Inquiry').count() > 0) {
+          appFrame = f;
+          break;
+        }
+      } catch {
+        // Detached frame — skip.
+      }
+    }
+    if (!appFrame) {
+      console.log(`⏳ App frame not ready, retry ${attempt + 1}/5`);
+      await page.waitForTimeout(3000);
     }
   }
 
@@ -100,17 +124,29 @@ test('✅ STABLE Ingenium Policy Inquiry Flow', async ({ page }) => {
 
   console.log("✅ Navigation successful");
 
+  // Menu navigation triggers another load; let it settle.
+  await page.waitForLoadState('networkidle').catch(() => {});
   await page.waitForTimeout(5000);
 
   // ======================================================
-  // STEP 8: Enter Policy ID
+  // STEP 8: Enter Policy ID (retry until form frame settles)
   // ======================================================
   let formFrame = null;
 
-  for (const f of page.frames()) {
-    if (await f.locator('input').count() > 0) {
-      formFrame = f;
-      break;
+  for (let attempt = 0; attempt < 5 && !formFrame; attempt++) {
+    for (const f of page.frames()) {
+      try {
+        if (await f.locator('input').count() > 0) {
+          formFrame = f;
+          break;
+        }
+      } catch {
+        // Detached frame — skip.
+      }
+    }
+    if (!formFrame) {
+      console.log(`⏳ Form frame not ready, retry ${attempt + 1}/5`);
+      await page.waitForTimeout(3000);
     }
   }
 
@@ -121,7 +157,8 @@ test('✅ STABLE Ingenium Policy Inquiry Flow', async ({ page }) => {
 
   console.log("✅ Policy submitted:", POLICY_ID);
 
-  await page.waitForLoadState('networkidle');
+  await page.waitForLoadState('networkidle').catch(() => {});
+  await page.waitForTimeout(5000);
 
   // ======================================================
   // STEP 9: Screenshot
