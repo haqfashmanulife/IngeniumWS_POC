@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-test('✅ STABLE Ingenium Policy Inquiry Flow', async ({ page }) => {
+test('✅ BULLETPROOF Ingenium Policy Inquiry Flow', async ({ page }) => {
 
   const BASE_URL   = process.env.APP_URL;
   const USERNAME   = process.env.APP_USERNAME;
@@ -11,15 +11,34 @@ test('✅ STABLE Ingenium Policy Inquiry Flow', async ({ page }) => {
   expect(POLICY_ID).toBeTruthy();
 
   // ======================================================
-  // STEP 1: Launch App
+  // UTIL: SAFE FRAME FINDER (auto-retry + detach safe)
+  // ======================================================
+  async function findFrame(page, predicate, retries = 8, delay = 3000) {
+    for (let i = 0; i < retries; i++) {
+      for (const f of page.frames()) {
+        try {
+          if (await predicate(f)) {
+            return f;
+          }
+        } catch {
+          // frame detached → ignore
+        }
+      }
+      console.log(`⏳ Frame not ready (attempt ${i + 1}/${retries})`);
+      await page.waitForTimeout(delay);
+    }
+    throw new Error('❌ Frame not found');
+  }
+
+  // ======================================================
+  // STEP 1: Launch
   // ======================================================
   await page.goto(BASE_URL, { waitUntil: 'networkidle' });
-  console.log("✅ URL:", page.url());
 
   await page.screenshot({ path: 'screenshots/01-launch.png', fullPage: true });
 
   // ======================================================
-  // STEP 2: Click English Sign On (if present)
+  // STEP 2: English button
   // ======================================================
   const english = page.getByText('English Sign On');
 
@@ -31,129 +50,102 @@ test('✅ STABLE Ingenium Policy Inquiry Flow', async ({ page }) => {
   await page.waitForTimeout(5000);
 
   // ======================================================
-  // STEP 3: Find LOGIN FRAME
+  // STEP 3: LOGIN FRAME
   // ======================================================
-  let loginFrame = null;
-
-  for (const f of page.frames()) {
-    try {
-      if (await f.locator('input[type="password"]').count() > 0) {
-        loginFrame = f;
-        break;
-      }
-    } catch {
-      // Frame detached mid-scan — skip it.
-    }
-  }
+  const loginFrame = await findFrame(page, async (f) => {
+    return await f.locator('input[type="password"]').count() > 0;
+  });
 
   // ======================================================
-  // STEP 4: Login (if needed)
+  // STEP 4: LOGIN
   // ======================================================
   if (loginFrame) {
     console.log("✅ Login frame found");
 
     await loginFrame.locator('input[type="text"]').first().fill(USERNAME);
     await loginFrame.locator('input[type="password"]').fill(PASSWORD);
+
     await loginFrame.locator('select').selectOption({ label: COMPANY });
 
     await loginFrame.getByRole('button', { name: /submit/i }).click();
 
     console.log("✅ Login submitted");
+
+    await page.waitForLoadState('networkidle').catch(() => {});
     await page.waitForTimeout(5000);
-  } else {
-    console.log("✅ Already logged in");
   }
 
   await page.screenshot({ path: 'screenshots/02-after-login.png', fullPage: true });
 
   // ======================================================
-  // STEP 5: Handle OK popup
+  // STEP 5: HANDLE OK POPUP (VERY ROBUST)
   // ======================================================
-  // Clicking OK triggers a navigation/reload that DETACHES the other
-  // frames. So: stop scanning immediately after the click (break), guard
-  // each frame access against detachment, then wait for the reload to
-  // settle (~10s) before touching frames again.
-  for (const f of page.frames()) {
-    try {
-      const okBtn = f.getByRole('button', { name: 'OK' });
-      if (await okBtn.count() > 0) {
-        await okBtn.first().click();
-        console.log("✅ Clicked OK popup");
-        break;
-      }
-    } catch {
-      console.log("⚠️ Skipped detached frame during OK scan");
-    }
+  try {
+    const popupFrame = await findFrame(page, async (f) => {
+      return await f.getByRole('button', { name: 'OK' }).count() > 0;
+    }, 3, 2000);
+
+    await popupFrame.getByRole('button', { name: 'OK' }).first().click();
+
+    console.log("✅ Clicked OK popup");
+
+    await page.waitForLoadState('networkidle').catch(() => {});
+    await page.waitForTimeout(10000);
+  } catch {
+    console.log("✅ No popup detected");
   }
 
-  // Page reloads after OK and takes ~10s to render the next view.
-  await page.waitForLoadState('networkidle').catch(() => {});
-  await page.waitForTimeout(10000);
-
   // ======================================================
-  // STEP 6: Find APP FRAME (retry until frames settle)
+  // STEP 6: APP FRAME (stable detection)
   // ======================================================
-  let appFrame = null;
-
-  for (let attempt = 0; attempt < 5 && !appFrame; attempt++) {
-    for (const f of page.frames()) {
-      try {
-        if (await f.locator('text=Policy Inquiry').count() > 0) {
-          appFrame = f;
-          break;
-        }
-      } catch {
-        // Detached frame — skip.
-      }
-    }
-    if (!appFrame) {
-      console.log(`⏳ App frame not ready, retry ${attempt + 1}/5`);
-      await page.waitForTimeout(3000);
-    }
-  }
-
-  if (!appFrame) throw new Error("❌ App frame not found");
+  const appFrame = await findFrame(page, async (f) => {
+    return await f.locator('span[title="Policy Inquiry"]').count() > 0;
+  });
 
   console.log("✅ App frame ready");
 
   // ======================================================
-  // STEP 7: Navigate Menu
+  // UTIL: SAFE CLICK (retry + strict-safe)
   // ======================================================
-  await appFrame.locator('text=Policy Inquiry').click();
-  await appFrame.locator('text=Policy Inquiry - All Details').click();
+  async function safeClick(locator, retries = 5) {
+    for (let i = 0; i < retries; i++) {
+      try {
+        await locator.first().waitFor({ state: 'visible', timeout: 5000 });
+        await locator.first().click();
+        return;
+      } catch (err) {
+        console.log(`⚠️ Click retry ${i + 1}`);
+        await page.waitForTimeout(2000);
+      }
+    }
+    throw new Error("❌ Failed to click element");
+  }
+
+  // ======================================================
+  // STEP 7: LEFT MENU NAVIGATION (FIXED ✅)
+  // ======================================================
+  await safeClick(appFrame.locator('span[title="Policy Inquiry"]'));
+
+  await safeClick(
+    appFrame.locator('a').filter({ hasText: 'Policy Inquiry - All Details' })
+  );
 
   console.log("✅ Navigation successful");
 
-  // Menu navigation triggers another load; let it settle.
   await page.waitForLoadState('networkidle').catch(() => {});
   await page.waitForTimeout(5000);
 
   // ======================================================
-  // STEP 8: Enter Policy ID (retry until form frame settles)
+  // STEP 8: FORM FRAME (robust detection)
   // ======================================================
-  let formFrame = null;
+  const formFrame = await findFrame(page, async (f) => {
+    return await f.locator('input').count() > 0;
+  });
 
-  for (let attempt = 0; attempt < 5 && !formFrame; attempt++) {
-    for (const f of page.frames()) {
-      try {
-        if (await f.locator('input').count() > 0) {
-          formFrame = f;
-          break;
-        }
-      } catch {
-        // Detached frame — skip.
-      }
-    }
-    if (!formFrame) {
-      console.log(`⏳ Form frame not ready, retry ${attempt + 1}/5`);
-      await page.waitForTimeout(3000);
-    }
-  }
-
-  if (!formFrame) throw new Error("❌ Form frame not found");
-
+  // Fill policy input
   await formFrame.locator('input').first().fill(POLICY_ID);
-  await formFrame.getByRole('button', { name: 'OK' }).click();
+
+  await safeClick(formFrame.getByRole('button', { name: 'OK' }));
 
   console.log("✅ Policy submitted:", POLICY_ID);
 
@@ -161,7 +153,7 @@ test('✅ STABLE Ingenium Policy Inquiry Flow', async ({ page }) => {
   await page.waitForTimeout(5000);
 
   // ======================================================
-  // STEP 9: Screenshot
+  // STEP 9: FINAL SCREENSHOT
   // ======================================================
   const path = `screenshots/policy-${POLICY_ID}.png`;
 
