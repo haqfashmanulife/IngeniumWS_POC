@@ -5,6 +5,6 @@ module.exports = {
     headless: true,
     viewport: { width: 1920, height: 1080 },
     screenshot: 'only-on-failure',
-    ignoreHTTPSErrors: true   // ✅ CRITICAL for your env
+    ignoreHTTPSErrors: true
   }
 };
