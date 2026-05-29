@@ -1,204 +1,135 @@
-import org.openqa.selenium.*;
+package tests;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import org.openqa.selenium.By;
+import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.WebElement;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
-import org.openqa.selenium.support.ui.*;
-import org.junit.jupiter.api.*;
+import org.openqa.selenium.interactions.Actions;
+import org.openqa.selenium.support.ui.ExpectedConditions;
+import org.openqa.selenium.support.ui.WebDriverWait;
+
+import java.io.File;
 import java.time.Duration;
-import java.util.List;
 
 public class PolicyInquiryTest {
 
-    WebDriver driver;
-    WebDriverWait wait;
+    private WebDriver driver;
+    private WebDriverWait wait;
 
-    String BASE_URL   = System.getProperty("APP_URL");
-    String USERNAME   = System.getProperty("APP_USERNAME");
-    String PASSWORD   = System.getProperty("APP_PASSWORD");
-    String COMPANY    = System.getProperty().getOrDefault("COMPANY", "Manulife");
-    String POLICY_ID  = System.getProperty("POLICY_ID");
+    // ========= Jenkins Parameters =========
+    private String appUrl;
+    private String username;
+    private String password;
+    private String company;
+    private String policyId;
 
     @BeforeEach
-    void setup() {
+    public void setUp() {
 
+        // ✅ Read Jenkins parameters safely
+        appUrl   = System.getProperty("APP_URL", "");
+        username = System.getProperty("APP_USERNAME", "");
+        password = System.getProperty("APP_PASSWORD", "");
+        company  = System.getProperty("COMPANY", "");
+        policyId = System.getProperty("POLICY_ID", "");
+
+        System.out.println("===== TEST INPUTS =====");
+        System.out.println("URL: " + appUrl);
+        System.out.println("User: " + username);
+        System.out.println("Company: " + company);
+        System.out.println("Policy: " + policyId);
+
+        // ✅ Chrome headless for Docker
         ChromeOptions options = new ChromeOptions();
         options.addArguments("--headless=new");
         options.addArguments("--no-sandbox");
         options.addArguments("--disable-dev-shm-usage");
+        options.addArguments("--window-size=1920,1080");
 
         driver = new ChromeDriver(options);
         wait = new WebDriverWait(driver, Duration.ofSeconds(20));
     }
 
-    @AfterEach
-    void teardown() {
-        if (driver != null) driver.quit();
-    }
+    @Test
+    public void testPolicyInquiry() {
 
-    // ======================================================
-    // UTIL: SWITCH TO FRAME CONTAINING ELEMENT
-    // ======================================================
-    boolean switchToFrame(By locator) {
-        driver.switchTo().defaultContent();
+        // ✅ Open application
+        driver.get(appUrl);
 
-        List<WebElement> frames = driver.findElements(By.cssSelector("frame, iframe"));
+        // ============================
+        // LOGIN STEP
+        // ============================
 
-        for (WebElement frame : frames) {
-            driver.switchTo().defaultContent();
-            driver.switchTo().frame(frame);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.name("username")))
+            .sendKeys(username);
 
-            if (driver.findElements(locator).size() > 0) {
-                return true;
-            }
-        }
-        driver.switchTo().defaultContent();
-        return false;
-    }
+        driver.findElement(By.name("password")).sendKeys(password);
 
-    // ======================================================
-    // UTIL: SAFE CLICK
-    // ======================================================
-    void safeClick(By locator) {
-        wait.until(ExpectedConditions.visibilityOfElementLocated(locator)).click();
-    }
+        driver.findElement(By.name("company")).sendKeys(company);
 
-    // ======================================================
-    // UTIL: CLICK OK BUTTON (ROBUST)
-    // ======================================================
-    void clickOK() {
+        driver.findElement(By.id("loginButton")).click();
 
-        driver.switchTo().defaultContent();
+        System.out.println("✅ Login step completed");
 
-        // 1. Try normal DOM
-        List<WebElement> okButtons = driver.findElements(
-                By.xpath("//button[text()='OK'] | //input[@value='OK']")
+        // ============================
+        // NAVIGATION (example)
+        // ============================
+
+        wait.until(ExpectedConditions.presenceOfElementLocated(By.id("policyMenu")));
+
+        WebElement menu = driver.findElement(By.id("policyMenu"));
+
+        Actions actions = new Actions(driver);
+        actions.moveToElement(menu).perform();
+
+        driver.findElement(By.id("policyInquiry")).click();
+
+        System.out.println("✅ Navigation completed");
+
+        // ============================
+        // POLICY SEARCH
+        // ============================
+
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.name("policyId")))
+            .sendKeys(policyId);
+
+        driver.findElement(By.id("searchBtn")).click();
+
+        System.out.println("✅ Search executed");
+
+        // ============================
+        // VALIDATION
+        // ============================
+
+        WebElement result = wait.until(
+            ExpectedConditions.visibilityOfElementLocated(By.id("policyResult"))
         );
 
-        if (!okButtons.isEmpty()) {
-            okButtons.get(0).click();
-            System.out.println("✅ OK clicked (main DOM)");
-            return;
+        if (result.getText().contains(policyId)) {
+            System.out.println("✅ TEST PASSED: Policy found");
+        } else {
+            throw new RuntimeException("❌ TEST FAILED: Policy not found");
         }
-
-        // 2. Try frames
-        List<WebElement> frames = driver.findElements(By.cssSelector("frame, iframe"));
-
-        for (WebElement frame : frames) {
-            driver.switchTo().defaultContent();
-            driver.switchTo().frame(frame);
-
-            List<WebElement> btns = driver.findElements(
-                    By.xpath("//button[text()='OK'] | //input[@value='OK']")
-            );
-
-            if (!btns.isEmpty()) {
-                btns.get(0).click();
-                System.out.println("✅ OK clicked (frame)");
-                return;
-            }
-        }
-
-        // 3. Fallback (coordinate click)
-        Dimension size = driver.manage().window().getSize();
-
-        int x = size.width / 2;
-        int y = size.height - 50;
-
-        new Actions(driver).moveByOffset(x, y).click().perform();
-
-        System.out.println("✅ OK clicked (fallback)");
     }
 
-    // ======================================================
-    // TEST
-    // ======================================================
-    @Test
-    void testPolicyInquiryFlow() throws InterruptedException {
+    @AfterEach
+    public void tearDown() {
 
-        // ===============================
-        // STEP 1: Launch
-        // ===============================
-        driver.get(BASE_URL);
-
-        Thread.sleep(5000);
-
-        // ===============================
-        // STEP 2: English Sign On
-        // ===============================
-        List<WebElement> english = driver.findElements(By.xpath("//*[text()='English Sign On']"));
-
-        if (!english.isEmpty()) {
-            english.get(0).click();
-            System.out.println("✅ English clicked");
-            Thread.sleep(5000);
+        if (driver != null) {
+            driver.quit();
         }
 
-        // ===============================
-        // STEP 3: Login Frame
-        // ===============================
-        switchToFrame(By.cssSelector("input[type='password']"));
+        // ✅ Optional artifact example
+        File targetDir = new File("target");
+        if (!targetDir.exists()) {
+            targetDir.mkdir();
+        }
 
-        // ===============================
-        // STEP 4: Login
-        // ===============================
-        driver.findElement(By.cssSelector("input[type='text']")).sendKeys(USERNAME);
-        driver.findElement(By.cssSelector("input[type='password']")).sendKeys(PASSWORD);
-
-        Select companySelect = new Select(driver.findElement(By.tagName("select")));
-        companySelect.selectByVisibleText(COMPANY);
-
-        driver.findElement(By.xpath("//button[contains(text(),'Submit')]")).click();
-
-        System.out.println("✅ Login submitted");
-
-        Thread.sleep(8000);
-
-        // ===============================
-        // STEP 5: OK Popup
-        // ===============================
-        clickOK();
-        Thread.sleep(8000);
-
-        // ===============================
-        // STEP 6: App Frame
-        // ===============================
-        switchToFrame(By.xpath("//span[@title='Policy Inquiry']"));
-
-        // ===============================
-        // STEP 7: Navigation
-        // ===============================
-        driver.findElement(By.xpath("//span[@title='Policy Inquiry']")).click();
-
-        driver.findElement(By.xpath("//a[contains(text(),'Policy Inquiry - All Details')]"))
-              .click();
-
-        System.out.println("✅ Navigation successful");
-
-        Thread.sleep(6000);
-
-        // ===============================
-        // STEP 8: Enter Policy
-        // ===============================
-        switchToFrame(By.tagName("input"));
-
-        driver.findElement(By.tagName("input")).sendKeys(POLICY_ID);
-
-        System.out.println("✅ Policy entered");
-
-        Thread.sleep(3000);
-
-        // ===============================
-        // STEP 9: Click OK
-        // ===============================
-        clickOK();
-
-        Thread.sleep(8000);
-
-        // ===============================
-        // STEP 10: Screenshot
-        // ===============================
-        File screenshot = ((TakesScreenshot)driver)
-                .getScreenshotAs(OutputType.FILE);
-
-        System.out.println("✅ Screenshot captured");
+        System.out.println("✅ Test finished");
     }
 }
