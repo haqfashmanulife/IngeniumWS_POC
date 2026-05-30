@@ -1,0 +1,27 @@
+# Maven + JDK 17 with Google Chrome pre-installed, for Selenium UI tests.
+# Build & push once, then reference it from the Jenkinsfile.
+#
+#   docker build -t your-registry/maven-chrome:3.9-jdk17 -f Dockerfile.maven-chrome .
+#   docker push   your-registry/maven-chrome:3.9-jdk17
+#
+FROM maven:3.9-eclipse-temurin-17
+
+USER root
+
+# Install Google Chrome stable + minimal runtime deps.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+        wget gnupg ca-certificates fonts-liberation \
+        libnss3 libxss1 libasound2 libatk-bridge2.0-0 libgtk-3-0 \
+        libgbm1 libdrm2 unzip \
+ && wget -q -O /tmp/chrome.deb \
+        https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
+ && apt-get install -y --no-install-recommends /tmp/chrome.deb \
+ && rm -f /tmp/chrome.deb \
+ && rm -rf /var/lib/apt/lists/*
+
+# WebDriverManager / Selenium Manager will auto-match the driver to this Chrome.
+ENV CHROME_BIN=/usr/bin/google-chrome
+
+# Let the Jenkins agent UID (9001) run mvn and write its repo.
+RUN mkdir -p /tmp/mvnhome && chmod -R 777 /tmp/mvnhome
