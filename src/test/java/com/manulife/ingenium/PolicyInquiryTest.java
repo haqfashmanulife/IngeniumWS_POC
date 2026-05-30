@@ -53,9 +53,25 @@ public class PolicyInquiryTest {
         Assert.assertNotNull(POLICY_ID, "POLICY_ID must be provided");
         Files.createDirectories(SHOTS);
 
+        // Selenium 4 has Selenium Manager built in; WebDriverManager is a
+        // belt-and-suspenders driver resolver. Either way the driver is matched
+        // to whatever Chrome is in the image.
         WebDriverManager.chromedriver().setup();
 
         ChromeOptions options = new ChromeOptions();
+        // Point at the Chrome installed in the image, if exposed via CHROME_BIN
+        // (markhobson/maven-chrome installs it at /usr/bin/google-chrome).
+        String chromeBin = System.getenv("CHROME_BIN");
+        if (chromeBin == null || chromeBin.isBlank()) {
+            if (new File("/usr/bin/google-chrome").exists()) {
+                chromeBin = "/usr/bin/google-chrome";
+            }
+        }
+        if (chromeBin != null && !chromeBin.isBlank()) {
+            options.setBinary(chromeBin);
+            System.out.println("\uD83C\uDF0D Using Chrome binary: " + chromeBin);
+        }
+
         options.addArguments("--headless=new");
         options.addArguments("--no-sandbox");
         options.addArguments("--disable-dev-shm-usage");
