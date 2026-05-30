@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE suite SYSTEM "https://testng.org/testng-1.0.dtd">
+<suite name="Ingenium UI Suite" verbose="1">
+    <test name="Policy Inquiry">
+        <classes>
+            <class name="com.manulife.ingenium.PolicyInquiryTest"/>
+        </classes>
+    </test>
+</suite>
