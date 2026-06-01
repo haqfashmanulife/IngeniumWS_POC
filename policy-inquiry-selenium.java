@@ -1,8 +1,10 @@
 package com.manulife.ingenium.tests;
 
 import io.github.bonigarcia.wdm.WebDriverManager;
+import org.openqa.selenium.Alert;
 import org.openqa.selenium.By;
 import org.openqa.selenium.JavascriptExecutor;
+import org.openqa.selenium.NoAlertPresentException;
 import org.openqa.selenium.NoSuchFrameException;
 import org.openqa.selenium.OutputType;
 import org.openqa.selenium.StaleElementReferenceException;
@@ -14,6 +16,7 @@ import org.openqa.selenium.WebElement;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
 import org.openqa.selenium.support.ui.ExpectedCondition;
+import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 import org.testng.Assert;
 import org.testng.annotations.AfterMethod;
@@ -41,9 +44,9 @@ public class PolicyInquiryTest {
     @BeforeMethod
     public void setUp() {
         appUrl = getProperty("app.url", "APP_URL");
-        company = getProperty("company", "COMPANY");
-        username = getProperty("app.username", "APP_USERNAME");
-        password = getProperty("app.password", "APP_PASSWORD");
+        company = getProperty("company", "COMPANY", "Manulife");
+        username = getProperty("app.username", "APP_USERNAME", "gocc");
+        password = getProperty("app.password", "APP_PASSWORD", "ingenium");
         policyId = getProperty("policy.id", "POLICY_ID");
         screenshotDir = getProperty("screenshot.dir", "SCREENSHOT_DIR", "screenshots");
 
@@ -82,98 +85,196 @@ public class PolicyInquiryTest {
         printPageDiagnostics("after app open");
         printAllLinks("after app open");
 
-        /*
-         * Build #39 showed APP_URL opens a landing page:
-         * - 0 inputs
-         * - 0 buttons
-         * - 0 frames
-         * - 4 links
-         *
-         * So first navigate from landing page to actual login page if needed.
-         */
-        openLoginPageIfLandingPage();
+        clickEnglishSignOnIfNeeded();
 
         waitForDocumentReady();
-        takeScreenshot("01b-after-landing-navigation");
-        printPageDiagnostics("after landing navigation");
-        printAllLinks("after landing navigation");
+        waitQuietly(3000);
+        switchToLatestWindow();
+        takeScreenshot("02-english-sign-on-opened");
+        printPageDiagnostics("after english sign on");
+        printAllLinks("after english sign on");
 
-        /*
-         * Do not assume login is always inside a frame.
-         * This searches default content first, then all frames recursively.
-         */
-        typeFirstAvailable("company", new By[]{
-                By.name("company"),
-                By.id("company"),
-                By.name("COMPANY"),
-                By.id("COMPANY"),
-                By.cssSelector("input[name='company']"),
-                By.cssSelector("input[id*='company' i]"),
-                By.cssSelector("input[name*='company' i]")
-        }, company);
+        enterLoginDetailsAndSubmit();
 
-        typeFirstAvailable("username", new By[]{
+        waitForDocumentReady();
+        waitQuietly(2000);
+        takeScreenshot("03-login-submitted");
+
+        clickOkIfPresent("after login submit");
+
+        waitQuietly(10000);
+        waitForDocumentReady();
+        takeScreenshot("04-after-login-ok-and-wait");
+        printPageDiagnostics("after login ok and wait");
+        printAllLinks("after login ok and wait");
+
+        clickPolicyInquiry();
+
+        waitForDocumentReady();
+        waitQuietly(3000);
+        takeScreenshot("05-policy-inquiry-clicked");
+        printPageDiagnostics("after policy inquiry click");
+        printAllLinks("after policy inquiry click");
+
+        clickPolicyInquiryAllDetails();
+
+        waitForDocumentReady();
+        waitQuietly(3000);
+        takeScreenshot("06-policy-inquiry-all-details-opened");
+        printPageDiagnostics("after policy inquiry all details");
+        printAllLinks("after policy inquiry all details");
+
+        enterPolicyIdAndSubmit();
+
+        waitForDocumentReady();
+        waitQuietly(5000);
+        takeScreenshot("07-policy-id-submitted");
+        printPageDiagnostics("after policy id submitted");
+
+        boolean policyVisible = waitUntilTextAppearsInDefaultOrFrames(policyId, 45);
+
+        takeScreenshot("08-policy-result");
+
+        Assert.assertTrue(policyVisible, "Policy ID was not visible after inquiry: " + policyId);
+    }
+
+    private void clickEnglishSignOnIfNeeded() {
+        if (loginFieldsExist()) {
+            System.out.println("Login fields already visible. English Sign On click is not required.");
+            return;
+        }
+
+        System.out.println("Trying to click English Sign On.");
+
+        clickFirstAvailable("English Sign On", new By[]{
+                By.linkText("English Sign On"),
+                By.partialLinkText("English"),
+                By.partialLinkText("Sign On"),
+                By.xpath("//a[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'english sign on')]"),
+                By.xpath("//a[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'english')]"),
+                By.xpath("//a[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'sign on')]"),
+                By.xpath("//button[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'english sign on')]"),
+                By.xpath("//input[contains(translate(@value,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'english sign on')]")
+        });
+    }
+
+    private boolean loginFieldsExist() {
+        return elementExistsInDefaultOrFrames(new By[]{
+                By.name("name"),
+                By.id("name"),
+                By.name("Name"),
+                By.id("Name"),
+                By.name("username"),
+                By.id("username"),
+                By.cssSelector("input[type='password']")
+        });
+    }
+
+    private void enterLoginDetailsAndSubmit() throws Exception {
+        System.out.println("Entering login details.");
+
+        typeFirstAvailable("name", new By[]{
+                By.name("name"),
+                By.id("name"),
+                By.name("Name"),
+                By.id("Name"),
                 By.name("username"),
                 By.id("username"),
                 By.name("user"),
                 By.id("user"),
                 By.name("USER"),
                 By.id("USER"),
-                By.cssSelector("input[name='username']"),
-                By.cssSelector("input[id*='user' i]"),
+                By.cssSelector("input[name*='name' i]"),
+                By.cssSelector("input[id*='name' i]"),
                 By.cssSelector("input[name*='user' i]"),
+                By.cssSelector("input[id*='user' i]"),
                 By.cssSelector("input[type='text']")
         }, username);
 
         typeFirstAvailable("password", new By[]{
                 By.name("password"),
                 By.id("password"),
+                By.name("Password"),
+                By.id("Password"),
                 By.name("PASSWORD"),
                 By.id("PASSWORD"),
                 By.cssSelector("input[type='password']"),
-                By.cssSelector("input[name='password']"),
+                By.cssSelector("input[name*='password' i]"),
                 By.cssSelector("input[id*='password' i]")
         }, password);
 
-        takeScreenshot("02-login-details-entered");
+        /*
+         * Company is Manulife by default in your flow.
+         * If the field exists, we populate it. If it is not present, continue.
+         */
+        typeIfAvailable("company", new By[]{
+                By.name("company"),
+                By.id("company"),
+                By.name("Company"),
+                By.id("Company"),
+                By.name("COMPANY"),
+                By.id("COMPANY"),
+                By.cssSelector("input[name*='company' i]"),
+                By.cssSelector("input[id*='company' i]"),
+                By.cssSelector("select[name*='company' i]"),
+                By.cssSelector("select[id*='company' i]")
+        }, company);
 
-        clickFirstAvailable("login button", new By[]{
+        takeScreenshot("02b-login-details-entered");
+
+        clickFirstAvailable("submit", new By[]{
                 By.cssSelector("button[type='submit']"),
                 By.cssSelector("input[type='submit']"),
-                By.id("login"),
-                By.name("login"),
-                By.id("LOGIN"),
-                By.name("LOGIN"),
-                By.cssSelector("button[id*='login' i]"),
-                By.cssSelector("input[id*='login' i]"),
-                By.cssSelector("button[name*='login' i]"),
-                By.cssSelector("input[name*='login' i]"),
+                By.id("submit"),
+                By.name("submit"),
+                By.id("Submit"),
+                By.name("Submit"),
+                By.id("SUBMIT"),
+                By.name("SUBMIT"),
+                By.xpath("//button[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'submit')]"),
+                By.xpath("//input[contains(translate(@value,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'submit')]"),
+                By.xpath("//button[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'sign on')]"),
+                By.xpath("//input[contains(translate(@value,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'sign on')]"),
                 By.xpath("//button[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'login')]"),
-                By.xpath("//input[contains(translate(@value,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'login')]"),
-                By.xpath("//a[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'login')]"),
-                By.xpath("//button[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'sign in')]"),
-                By.xpath("//input[contains(translate(@value,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'sign in')]")
+                By.xpath("//input[contains(translate(@value,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'login')]")
         });
+    }
 
-        driver.switchTo().defaultContent();
+    private void clickPolicyInquiry() {
+        System.out.println("Clicking left side Policy Inquiry menu.");
 
-        waitForDocumentReady();
-        waitQuietly(3000);
-        takeScreenshot("03-login-submitted");
-        printPageDiagnostics("after login submit");
-        printAllLinks("after login submit");
+        clickFirstAvailable("Policy Inquiry", new By[]{
+                By.linkText("Policy Inquiry"),
+                By.partialLinkText("Policy Inquiry"),
+                By.partialLinkText("Policy"),
+                By.xpath("//a[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'policy inquiry')]"),
+                By.xpath("//span[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'policy inquiry')]"),
+                By.xpath("//div[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'policy inquiry')]"),
+                By.xpath("//td[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'policy inquiry')]"),
+                By.xpath("//button[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'policy inquiry')]"),
+                By.xpath("//input[contains(translate(@value,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'policy inquiry')]")
+        });
+    }
 
-        /*
-         * After login, the application may display another landing/menu page.
-         * Try to move toward policy inquiry if there are no policy input fields yet.
-         */
-        openPolicyInquiryPageIfNeeded();
+    private void clickPolicyInquiryAllDetails() {
+        System.out.println("Clicking Policy Inquiry - All Details.");
 
-        waitForDocumentReady();
-        waitQuietly(2000);
-        takeScreenshot("03b-after-policy-navigation");
-        printPageDiagnostics("after policy navigation");
-        printAllLinks("after policy navigation");
+        clickFirstAvailable("Policy Inquiry All Details", new By[]{
+                By.linkText("Policy Inquiry - All Details"),
+                By.linkText("Policy Inquiry – All Details"),
+                By.partialLinkText("All Details"),
+                By.partialLinkText("Policy Inquiry"),
+                By.xpath("//a[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'policy inquiry') and contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'all details')]"),
+                By.xpath("//span[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'policy inquiry') and contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'all details')]"),
+                By.xpath("//div[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'policy inquiry') and contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'all details')]"),
+                By.xpath("//td[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'policy inquiry') and contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'all details')]"),
+                By.xpath("//button[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'all details')]"),
+                By.xpath("//input[contains(translate(@value,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'all details')]")
+        });
+    }
+
+    private void enterPolicyIdAndSubmit() throws Exception {
+        System.out.println("Entering policy id: " + policyId);
 
         typeFirstAvailable("policy id", new By[]{
                 By.name("policyId"),
@@ -186,160 +287,132 @@ public class PolicyInquiryTest {
                 By.id("POL_ID"),
                 By.name("polId"),
                 By.id("polId"),
-                By.cssSelector("input[name='policyId']"),
-                By.cssSelector("input[id*='policy' i]"),
+                By.name("Policy"),
+                By.id("Policy"),
                 By.cssSelector("input[name*='policy' i]"),
+                By.cssSelector("input[id*='policy' i]"),
+                By.cssSelector("input[name*='pol' i]"),
                 By.cssSelector("input[id*='pol' i]"),
-                By.cssSelector("input[name*='pol' i]")
+                By.cssSelector("input[type='text']")
         }, policyId);
 
-        takeScreenshot("04-policy-id-entered");
+        takeScreenshot("06b-policy-id-entered");
 
-        clickFirstAvailable("policy search/inquiry button", new By[]{
-                By.id("search"),
-                By.name("search"),
-                By.id("inquiry"),
-                By.name("inquiry"),
-                By.id("submit"),
-                By.name("submit"),
-                By.cssSelector("button[type='submit']"),
-                By.cssSelector("input[type='submit']"),
-                By.cssSelector("button[id*='search' i]"),
-                By.cssSelector("input[id*='search' i]"),
-                By.cssSelector("button[name*='search' i]"),
-                By.cssSelector("input[name*='search' i]"),
-                By.cssSelector("button[id*='inquiry' i]"),
-                By.cssSelector("input[id*='inquiry' i]"),
-                By.xpath("//button[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'search')]"),
-                By.xpath("//input[contains(translate(@value,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'search')]"),
-                By.xpath("//button[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'inquiry')]"),
-                By.xpath("//input[contains(translate(@value,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'inquiry')]"),
-                By.xpath("//button[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'submit')]"),
-                By.xpath("//input[contains(translate(@value,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'submit')]")
-        });
+        clickOkIfPresent("before policy submit");
 
-        driver.switchTo().defaultContent();
+        if (!waitUntilTextAppearsInDefaultOrFrames(policyId, 5)) {
+            clickFirstAvailable("OK / policy submit", new By[]{
+                    By.id("ok"),
+                    By.name("ok"),
+                    By.id("OK"),
+                    By.name("OK"),
+                    By.id("submit"),
+                    By.name("submit"),
+                    By.cssSelector("button[type='submit']"),
+                    By.cssSelector("input[type='submit']"),
+                    By.xpath("//button[translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='OK']"),
+                    By.xpath("//input[translate(@value,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='OK']"),
+                    By.xpath("//button[contains(translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
+                    By.xpath("//input[contains(translate(@value,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
+                    By.xpath("//button[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'submit')]"),
+                    By.xpath("//input[contains(translate(@value,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'submit')]"),
+                    By.xpath("//button[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'search')]"),
+                    By.xpath("//input[contains(translate(@value,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'search')]")
+            });
+        }
+    }
 
+    private void clickOkIfPresent(String label) {
+        System.out.println("Checking OK confirmation: " + label);
+
+        if (acceptAlertIfPresent(label)) {
+            return;
+        }
+
+        try {
+            clickFirstAvailableShort("OK button " + label, new By[]{
+                    By.id("ok"),
+                    By.name("ok"),
+                    By.id("OK"),
+                    By.name("OK"),
+                    By.xpath("//button[translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='OK']"),
+                    By.xpath("//input[translate(@value,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='OK']"),
+                    By.xpath("//button[contains(translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
+                    By.xpath("//input[contains(translate(@value,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
+                    By.xpath("//a[translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='OK']")
+            });
+        } catch (Exception e) {
+            System.out.println("No OK button found for: " + label + ". Continuing.");
+        }
+    }
+
+    private boolean acceptAlertIfPresent(String label) {
+        try {
+            WebDriverWait shortWait = new WebDriverWait(driver, Duration.ofSeconds(5));
+            Alert alert = shortWait.until(ExpectedConditions.alertIsPresent());
+
+            System.out.println("Alert found for " + label + ". Text: " + alert.getText());
+            alert.accept();
+            System.out.println("Alert accepted for " + label);
+
+            return true;
+        } catch (TimeoutException | NoAlertPresentException e) {
+            System.out.println("No browser alert present for " + label);
+            return false;
+        }
+    }
+
+    private void typeFirstAvailable(String fieldName, By[] locators, String value) {
+        WebElement element = findFirstAvailableElement(fieldName, locators, true, 45);
+
+        element.clear();
+        element.sendKeys(value);
+
+        System.out.println("Entered value for field: " + fieldName);
+    }
+
+    private void typeIfAvailable(String fieldName, By[] locators, String value) {
+        try {
+            WebElement element = findFirstAvailableElement(fieldName, locators, true, 8);
+
+            element.clear();
+            element.sendKeys(value);
+
+            System.out.println("Entered optional value for field: " + fieldName);
+        } catch (Exception e) {
+            System.out.println("Optional field not found: " + fieldName + ". Continuing.");
+        }
+    }
+
+    private void clickFirstAvailable(String elementName, By[] locators) {
+        WebElement element = findFirstAvailableElement(elementName, locators, false, 45);
+
+        element.click();
         waitForDocumentReady();
-        waitQuietly(3000);
-        takeScreenshot("05-policy-search-submitted");
-        printPageDiagnostics("after policy search submit");
+        waitQuietly(2000);
+        switchToLatestWindow();
 
-        boolean policyVisible = waitUntilTextAppearsInDefaultOrFrames(policyId, 45);
-
-        takeScreenshot("06-policy-result");
-
-        Assert.assertTrue(policyVisible, "Policy ID was not visible after inquiry: " + policyId);
+        System.out.println("Clicked element: " + elementName);
     }
 
-    private void openLoginPageIfLandingPage() {
-        driver.switchTo().defaultContent();
+    private void clickFirstAvailableShort(String elementName, By[] locators) {
+        WebElement element = findFirstAvailableElement(elementName, locators, false, 8);
 
-        int inputCount = driver.findElements(By.cssSelector("input")).size();
-        int passwordCount = driver.findElements(By.cssSelector("input[type='password']")).size();
+        element.click();
+        waitForDocumentReady();
+        waitQuietly(1000);
+        switchToLatestWindow();
 
-        if (inputCount > 0 || passwordCount > 0) {
-            System.out.println("Login fields already present. No landing-page navigation needed.");
-            return;
-        }
-
-        List<WebElement> links = driver.findElements(By.cssSelector("a"));
-
-        System.out.println("Landing page detected. Link count: " + links.size());
-
-        for (int i = 0; i < links.size(); i++) {
-            try {
-                WebElement link = links.get(i);
-                String text = safeText(link);
-                String href = safeAttribute(link, "href");
-                String target = safeAttribute(link, "target");
-                String onclick = safeAttribute(link, "onclick");
-
-                System.out.println(
-                        "Checking landing link index=" + i +
-                        ", text=[" + text + "]" +
-                        ", href=[" + href + "]" +
-                        ", target=[" + target + "]" +
-                        ", onclick=[" + onclick + "]"
-                );
-
-                String combined = (text + " " + href + " " + target + " " + onclick).toLowerCase();
-
-                if (combined.contains("ingenium")
-                        || combined.contains("login")
-                        || combined.contains("pathfinder")
-                        || combined.contains("launch")
-                        || combined.contains("application")
-                        || combined.contains("t2")) {
-
-                    clickLinkByIndex(i, "landing/login/application");
-                    return;
-                }
-            } catch (Exception e) {
-                System.out.println("Unable to inspect landing link index=" + i + ": " + e.getMessage());
-            }
-        }
-
-        /*
-         * If no keyword match is found but links exist, click the first link.
-         * Build #39 showed only 4 links and no input fields, so one of them likely launches the app.
-         */
-        if (!links.isEmpty()) {
-            System.out.println("No recognized login/application link found. Clicking first available landing link.");
-            clickLinkByIndex(0, "fallback first landing link");
-            return;
-        }
-
-        takeScreenshotQuietly("landing-page-no-login-link-clicked");
-
-        throw new RuntimeException(
-                "Landing page has no input fields and no links. Cannot reach login page."
-        );
-    }
-
-    private void openPolicyInquiryPageIfNeeded() {
-        driver.switchTo().defaultContent();
-
-        if (elementExistsInDefaultOrFrames(new By[]{
-                By.name("policyId"),
-                By.id("policyId"),
-                By.name("policyNumber"),
-                By.id("policyNumber"),
-                By.name("policy"),
-                By.id("policy"),
-                By.name("POL_ID"),
-                By.id("POL_ID"),
-                By.cssSelector("input[id*='policy' i]"),
-                By.cssSelector("input[name*='policy' i]"),
-                By.cssSelector("input[id*='pol' i]"),
-                By.cssSelector("input[name*='pol' i]")
-        })) {
-            System.out.println("Policy input already present. No policy navigation needed.");
-            return;
-        }
-
-        System.out.println("Policy input not found yet. Trying policy inquiry navigation.");
-
-        clickLinkOrButtonIfAvailable("policy inquiry navigation", new By[]{
-                By.linkText("Policy Inquiry"),
-                By.partialLinkText("Policy"),
-                By.partialLinkText("Inquiry"),
-                By.partialLinkText("POLICY"),
-                By.partialLinkText("INQUIRY"),
-                By.xpath("//a[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'policy')]"),
-                By.xpath("//a[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'inquiry')]"),
-                By.xpath("//button[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'policy')]"),
-                By.xpath("//button[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'inquiry')]"),
-                By.xpath("//input[contains(translate(@value,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'policy')]"),
-                By.xpath("//input[contains(translate(@value,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'inquiry')]")
-        });
+        System.out.println("Clicked element: " + elementName);
     }
 
     private boolean elementExistsInDefaultOrFrames(By[] locators) {
         for (By locator : locators) {
             try {
                 driver.switchTo().defaultContent();
+
                 WebElement element = findElementInCurrentContextOrFrames(locator, true, 0);
+
                 if (element != null) {
                     System.out.println("Element exists using locator: " + locator);
                     return true;
@@ -352,116 +425,12 @@ public class PolicyInquiryTest {
         return false;
     }
 
-    private void clickLinkOrButtonIfAvailable(String elementName, By[] locators) {
+    private WebElement findFirstAvailableElement(String elementName, By[] locators, boolean requireVisible, int timeoutSeconds) {
+        WebDriverWait customWait = new WebDriverWait(driver, Duration.ofSeconds(timeoutSeconds));
+
         for (By locator : locators) {
             try {
-                WebElement element = wait.until((ExpectedCondition<WebElement>) webDriver -> {
-                    try {
-                        webDriver.switchTo().defaultContent();
-                        WebElement found = findElementInCurrentContextOrFrames(locator, true, 0);
-
-                        if (found != null && found.isEnabled()) {
-                            return found;
-                        }
-
-                        return null;
-                    } catch (Exception e) {
-                        return null;
-                    }
-                });
-
-                if (element != null) {
-                    System.out.println("Clicking " + elementName + " using locator: " + locator);
-                    element.click();
-                    waitForDocumentReady();
-                    waitQuietly(3000);
-                    return;
-                }
-            } catch (TimeoutException ignored) {
-                System.out.println("Navigation element not found using locator: " + locator);
-            }
-        }
-
-        takeScreenshotQuietly("navigation-not-found-" + sanitizeFileName(elementName));
-        printPageDiagnostics("navigation not found: " + elementName);
-        printAllLinks("navigation not found: " + elementName);
-
-        throw new RuntimeException("Unable to find navigation element: " + elementName);
-    }
-
-    private void clickLinkByIndex(int index, String reason) {
-        try {
-            driver.switchTo().defaultContent();
-
-            List<WebElement> links = driver.findElements(By.cssSelector("a"));
-
-            if (index < 0 || index >= links.size()) {
-                throw new RuntimeException("Invalid link index: " + index + ", total links: " + links.size());
-            }
-
-            WebElement link = links.get(index);
-
-            System.out.println(
-                    "Clicking link index=" + index +
-                    " for reason=[" + reason + "]" +
-                    ", text=[" + safeText(link) + "]" +
-                    ", href=[" + safeAttribute(link, "href") + "]"
-            );
-
-            link.click();
-
-            waitForDocumentReady();
-            waitQuietly(3000);
-
-            /*
-             * If link opens a new tab/window, switch to latest window.
-             */
-            switchToLatestWindow();
-
-        } catch (Exception e) {
-            takeScreenshotQuietly("failed-click-link-index-" + index);
-            throw new RuntimeException("Unable to click link index " + index + " for " + reason, e);
-        }
-    }
-
-    private void switchToLatestWindow() {
-        try {
-            String latestHandle = null;
-
-            for (String handle : driver.getWindowHandles()) {
-                latestHandle = handle;
-            }
-
-            if (latestHandle != null) {
-                driver.switchTo().window(latestHandle);
-                System.out.println("Switched to latest window. URL: " + driver.getCurrentUrl());
-            }
-        } catch (Exception e) {
-            System.out.println("Unable to switch to latest window: " + e.getMessage());
-        }
-    }
-
-    private void typeFirstAvailable(String fieldName, By[] locators, String value) {
-        WebElement element = findFirstAvailableElement(fieldName, locators, true);
-
-        element.clear();
-        element.sendKeys(value);
-
-        System.out.println("Entered value for field: " + fieldName);
-    }
-
-    private void clickFirstAvailable(String elementName, By[] locators) {
-        WebElement element = findFirstAvailableElement(elementName, locators, false);
-
-        element.click();
-
-        System.out.println("Clicked element: " + elementName);
-    }
-
-    private WebElement findFirstAvailableElement(String elementName, By[] locators, boolean requireVisible) {
-        for (By locator : locators) {
-            try {
-                WebElement found = wait.until((ExpectedCondition<WebElement>) webDriver -> {
+                WebElement found = customWait.until((ExpectedCondition<WebElement>) webDriver -> {
                     try {
                         webDriver.switchTo().defaultContent();
 
@@ -495,12 +464,13 @@ public class PolicyInquiryTest {
         takeScreenshotQuietly("element-not-found-" + sanitizeFileName(elementName));
         printPageDiagnostics("element not found: " + elementName);
         printAllLinks("element not found: " + elementName);
+        printAllInputs("element not found: " + elementName);
 
         throw new RuntimeException("Unable to find element: " + elementName);
     }
 
     private WebElement findElementInCurrentContextOrFrames(By locator, boolean requireVisible, int depth) {
-        if (depth > 5) {
+        if (depth > 8) {
             return null;
         }
 
@@ -574,7 +544,7 @@ public class PolicyInquiryTest {
     }
 
     private boolean pageSourceContainsTextInCurrentContextOrFrames(String text, int depth) {
-        if (depth > 5) {
+        if (depth > 8) {
             return false;
         }
 
@@ -605,6 +575,23 @@ public class PolicyInquiryTest {
         }
 
         return false;
+    }
+
+    private void switchToLatestWindow() {
+        try {
+            String latestHandle = null;
+
+            for (String handle : driver.getWindowHandles()) {
+                latestHandle = handle;
+            }
+
+            if (latestHandle != null) {
+                driver.switchTo().window(latestHandle);
+                System.out.println("Switched to latest window. URL: " + driver.getCurrentUrl());
+            }
+        } catch (Exception e) {
+            System.out.println("Unable to switch to latest window: " + e.getMessage());
+        }
     }
 
     private void waitForDocumentReady() {
@@ -657,6 +644,32 @@ public class PolicyInquiryTest {
             }
         } catch (Exception e) {
             System.out.println("Unable to print link diagnostics: " + e.getMessage());
+        }
+    }
+
+    private void printAllInputs(String label) {
+        try {
+            driver.switchTo().defaultContent();
+
+            List<WebElement> inputs = driver.findElements(By.cssSelector("input, select, textarea, button"));
+
+            System.out.println("===== INPUT/BUTTON DIAGNOSTICS: " + label + " =====");
+            System.out.println("Input/Button count: " + inputs.size());
+
+            for (int i = 0; i < inputs.size(); i++) {
+                WebElement input = inputs.get(i);
+
+                System.out.println(
+                        "Element[" + i + "] tag=[" + input.getTagName() + "]" +
+                        ", type=[" + safeAttribute(input, "type") + "]" +
+                        ", name=[" + safeAttribute(input, "name") + "]" +
+                        ", id=[" + safeAttribute(input, "id") + "]" +
+                        ", value=[" + safeAttribute(input, "value") + "]" +
+                        ", text=[" + safeText(input) + "]"
+                );
+            }
+        } catch (Exception e) {
+            System.out.println("Unable to print input diagnostics: " + e.getMessage());
         }
     }
 
