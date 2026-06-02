@@ -1,7 +1,10 @@
 package com.manulife.ingenium.tests;
 
-import io.github.bonigarcia.wdm.WebDriverManager.selenium.By;import io.github.bonigarcia.wdm.WebDriverManager;
+import io.github.bonigarcia.wdm.WebDriverManager;
+import org.openqa.selenium.Alert;
+import org.openqa.selenium.By;
 import org.openqa.selenium.JavascriptExecutor;
+import org.openqa.selenium.Keys;
 import org.openqa.selenium.NoAlertPresentException;
 import org.openqa.selenium.NoSuchFrameException;
 import org.openqa.selenium.OutputType;
@@ -15,6 +18,7 @@ import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
 import org.openqa.selenium.support.ui.ExpectedCondition;
 import org.openqa.selenium.support.ui.ExpectedConditions;
+import org.openqa.selenium.support.ui.Select;
 import org.openqa.selenium.support.ui.WebDriverWait;
 import org.testng.Assert;
 import org.testng.annotations.AfterMethod;
@@ -57,7 +61,6 @@ public class PolicyInquiryTest {
         WebDriverManager.chromedriver().setup();
 
         ChromeOptions options = new ChromeOptions();
-
         options.addArguments("--headless=new");
         options.addArguments("--no-sandbox");
         options.addArguments("--disable-dev-shm-usage");
@@ -86,16 +89,17 @@ public class PolicyInquiryTest {
         clickEnglishSignOnIfNeeded();
 
         waitForDocumentReady();
-        waitQuietly(3000);
+        waitQuietly(5000);
         switchToLatestWindow();
         takeScreenshot("02-english-sign-on-opened");
         printPageDiagnostics("after english sign on");
+        printPageDiagnosticsDeep("after english sign on");
         printAllLinks("after english sign on");
 
         enterLoginDetailsAndSubmit();
 
         waitForDocumentReady();
-        waitQuietly(2000);
+        waitQuietly(3000);
         takeScreenshot("03-login-submitted");
 
         clickOkIfPresent("after login submit");
@@ -104,6 +108,7 @@ public class PolicyInquiryTest {
         waitForDocumentReady();
         takeScreenshot("04-after-login-ok-and-wait");
         printPageDiagnostics("after login ok and wait");
+        printPageDiagnosticsDeep("after login ok and wait");
         printAllLinks("after login ok and wait");
 
         clickPolicyInquiry();
@@ -154,6 +159,23 @@ public class PolicyInquiryTest {
                 By.xpath("//button[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'english sign on')]"),
                 By.xpath("//input[contains(translate(@value,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'english sign on')]")
         });
+
+        waitForDocumentReady();
+        waitQuietly(5000);
+        switchToLatestWindow();
+
+        try {
+            new WebDriverWait(driver, Duration.ofSeconds(20)).until(webDriver -> {
+                webDriver.switchTo().defaultContent();
+                int frames = webDriver.findElements(By.cssSelector("frame, iframe")).size();
+                int inputs = webDriver.findElements(By.cssSelector("input")).size();
+                return frames > 0 || inputs > 0;
+            });
+        } catch (Exception e) {
+            System.out.println("Login page readiness wait did not detect frames/inputs: " + e.getMessage());
+        }
+
+        printPageDiagnosticsDeep("after English Sign On readiness wait");
     }
 
     private boolean loginFieldsExist() {
@@ -169,73 +191,171 @@ public class PolicyInquiryTest {
     }
 
     private void enterLoginDetailsAndSubmit() throws Exception {
-        System.out.println("Entering login details.");
+        System.out.println("Entering login details using standard locators first.");
 
-        typeFirstAvailable("name", new By[]{
-                By.name("name"),
-                By.id("name"),
-                By.name("Name"),
-                By.id("Name"),
-                By.name("username"),
-                By.id("username"),
-                By.name("user"),
-                By.id("user"),
-                By.name("USER"),
-                By.id("USER"),
-                By.cssSelector("input[name*='name' i]"),
-                By.cssSelector("input[id*='name' i]"),
-                By.cssSelector("input[name*='user' i]"),
-                By.cssSelector("input[id*='user' i]"),
-                By.cssSelector("input[type='text']")
-        }, username);
+        boolean standardLoginWorked = tryStandardLoginFields();
 
-        typeFirstAvailable("password", new By[]{
-                By.name("password"),
-                By.id("password"),
-                By.name("Password"),
-                By.id("Password"),
-                By.name("PASSWORD"),
-                By.id("PASSWORD"),
-                By.cssSelector("input[type='password']"),
-                By.cssSelector("input[name*='password' i]"),
-                By.cssSelector("input[id*='password' i]")
-        }, password);
-
-        /*
-         * Company is Manulife by default in your flow.
-         * If the field exists, we populate it. If it is not present, continue.
-         */
-        typeIfAvailable("company", new By[]{
-                By.name("company"),
-                By.id("company"),
-                By.name("Company"),
-                By.id("Company"),
-                By.name("COMPANY"),
-                By.id("COMPANY"),
-                By.cssSelector("input[name*='company' i]"),
-                By.cssSelector("input[id*='company' i]"),
-                By.cssSelector("select[name*='company' i]"),
-                By.cssSelector("select[id*='company' i]")
-        }, company);
+        if (!standardLoginWorked) {
+            System.out.println("Standard login locators failed. Trying legacy login form fallback.");
+            fillLegacyLoginFormByFieldTypeAndPosition();
+        }
 
         takeScreenshot("02b-login-details-entered");
 
-        clickFirstAvailable("submit", new By[]{
-                By.cssSelector("button[type='submit']"),
+        if (!clickLoginSubmitIfAvailable()) {
+            System.out.println("Submit element not found. Trying ENTER key fallback from password field.");
+            pressEnterOnPasswordField();
+        }
+
+        waitForDocumentReady();
+        waitQuietly(3000);
+        switchToLatestWindow();
+
+        System.out.println("Login submit action completed.");
+    }
+
+    private boolean tryStandardLoginFields() {
+        try {
+            typeFirstAvailable("name", new By[]{
+                    By.name("name"),
+                    By.id("name"),
+                    By.name("Name"),
+                    By.id("Name"),
+                    By.name("NAME"),
+                    By.id("NAME"),
+                    By.name("username"),
+                    By.id("username"),
+                    By.name("user"),
+                    By.id("user"),
+                    By.name("USER"),
+                    By.id("USER"),
+                    By.cssSelector("input[name*='name' i]"),
+                    By.cssSelector("input[id*='name' i]"),
+                    By.cssSelector("input[name*='user' i]"),
+                    By.cssSelector("input[id*='user' i]"),
+                    By.cssSelector("input[type='text']")
+            }, username);
+
+            typeFirstAvailable("password", new By[]{
+                    By.name("password"),
+                    By.id("password"),
+                    By.name("Password"),
+                    By.id("Password"),
+                    By.name("PASSWORD"),
+                    By.id("PASSWORD"),
+                    By.cssSelector("input[type='password']"),
+                    By.cssSelector("input[name*='password' i]"),
+                    By.cssSelector("input[id*='password' i]")
+            }, password);
+
+            typeIfAvailable("company", new By[]{
+                    By.name("company"),
+                    By.id("company"),
+                    By.name("Company"),
+                    By.id("Company"),
+                    By.name("COMPANY"),
+                    By.id("COMPANY"),
+                    By.cssSelector("input[name*='company' i]"),
+                    By.cssSelector("input[id*='company' i]"),
+                    By.cssSelector("select[name*='company' i]"),
+                    By.cssSelector("select[id*='company' i]"),
+                    By.cssSelector("select")
+            }, company);
+
+            return true;
+        } catch (Exception e) {
+            System.out.println("Standard login field strategy failed: " + e.getMessage());
+            takeScreenshotQuietly("standard-login-fields-failed");
+            printPageDiagnosticsDeep("standard login failed");
+            return false;
+        }
+    }
+
+    private void fillLegacyLoginFormByFieldTypeAndPosition() {
+        WebElement nameInput = findFirstVisibleElementDeep(new By[]{
+                By.cssSelector("input[type='text']"),
+                By.cssSelector("input:not([type])"),
+                By.cssSelector("input[type='']"),
+                By.cssSelector("input")
+        }, "legacy name text input", true, true, false);
+
+        WebElement passwordInput = findFirstVisibleElementDeep(new By[]{
+                By.cssSelector("input[type='password']")
+        }, "legacy password input", true, true, false);
+
+        if (nameInput == null) {
+            throw new RuntimeException("Unable to find legacy Name input on login page.");
+        }
+
+        if (passwordInput == null) {
+            throw new RuntimeException("Unable to find legacy Password input on login page.");
+        }
+
+        clearAndType(nameInput, username);
+        System.out.println("Entered username into legacy Name field.");
+
+        clearAndType(passwordInput, password);
+        System.out.println("Entered password into legacy Password field.");
+
+        WebElement companySelect = findFirstVisibleElementDeep(new By[]{
+                By.cssSelector("select"),
+                By.cssSelector("select[name*='company' i]"),
+                By.cssSelector("select[id*='company' i]")
+        }, "legacy company select", true, false, true);
+
+        if (companySelect != null) {
+            selectCompanyValue(companySelect, company);
+        } else {
+            System.out.println("No company select found. Assuming Company is already defaulted to Manulife.");
+        }
+    }
+
+    private boolean clickLoginSubmitIfAvailable() {
+        WebElement submit = findFirstVisibleElementDeep(new By[]{
                 By.cssSelector("input[type='submit']"),
-                By.id("submit"),
-                By.name("submit"),
-                By.id("Submit"),
-                By.name("Submit"),
-                By.id("SUBMIT"),
-                By.name("SUBMIT"),
-                By.xpath("//button[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'submit')]"),
+                By.cssSelector("input[type='image']"),
+                By.cssSelector("button[type='submit']"),
+                By.cssSelector("button"),
                 By.xpath("//input[contains(translate(@value,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'submit')]"),
-                By.xpath("//button[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'sign on')]"),
-                By.xpath("//input[contains(translate(@value,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'sign on')]"),
-                By.xpath("//button[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'login')]"),
-                By.xpath("//input[contains(translate(@value,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'login')]")
-        });
+                By.xpath("//button[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'submit')]"),
+                By.xpath("//input[contains(translate(@alt,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'submit')]"),
+                By.xpath("//img[contains(translate(@alt,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'submit')]"),
+                By.xpath("//*[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'submit')]")
+        }, "legacy submit", true, false, false);
+
+        if (submit == null) {
+            return false;
+        }
+
+        try {
+            submit.click();
+            System.out.println("Clicked login submit.");
+            return true;
+        } catch (Exception e) {
+            System.out.println("Normal submit click failed. Trying JavaScript click. Error: " + e.getMessage());
+
+            try {
+                ((JavascriptExecutor) driver).executeScript("arguments[0].click();", submit);
+                System.out.println("Clicked login submit using JavaScript.");
+                return true;
+            } catch (Exception jsError) {
+                System.out.println("JavaScript submit click failed: " + jsError.getMessage());
+                return false;
+            }
+        }
+    }
+
+    private void pressEnterOnPasswordField() {
+        WebElement passwordInput = findFirstVisibleElementDeep(new By[]{
+                By.cssSelector("input[type='password']")
+        }, "password enter fallback", true, true, false);
+
+        if (passwordInput == null) {
+            throw new RuntimeException("Unable to find password field for ENTER fallback.");
+        }
+
+        passwordInput.sendKeys(Keys.ENTER);
+        System.out.println("Pressed ENTER on password field.");
     }
 
     private void clickPolicyInquiry() {
@@ -363,8 +483,7 @@ public class PolicyInquiryTest {
     private void typeFirstAvailable(String fieldName, By[] locators, String value) {
         WebElement element = findFirstAvailableElement(fieldName, locators, true, 45);
 
-        element.clear();
-        element.sendKeys(value);
+        clearAndType(element, value);
 
         System.out.println("Entered value for field: " + fieldName);
     }
@@ -373,8 +492,7 @@ public class PolicyInquiryTest {
         try {
             WebElement element = findFirstAvailableElement(fieldName, locators, true, 8);
 
-            element.clear();
-            element.sendKeys(value);
+            clearAndType(element, value);
 
             System.out.println("Entered optional value for field: " + fieldName);
         } catch (Exception e) {
@@ -385,7 +503,13 @@ public class PolicyInquiryTest {
     private void clickFirstAvailable(String elementName, By[] locators) {
         WebElement element = findFirstAvailableElement(elementName, locators, false, 45);
 
-        element.click();
+        try {
+            element.click();
+        } catch (Exception e) {
+            System.out.println("Normal click failed for " + elementName + ". Trying JavaScript click. Error: " + e.getMessage());
+            ((JavascriptExecutor) driver).executeScript("arguments[0].click();", element);
+        }
+
         waitForDocumentReady();
         waitQuietly(2000);
         switchToLatestWindow();
@@ -396,7 +520,13 @@ public class PolicyInquiryTest {
     private void clickFirstAvailableShort(String elementName, By[] locators) {
         WebElement element = findFirstAvailableElement(elementName, locators, false, 8);
 
-        element.click();
+        try {
+            element.click();
+        } catch (Exception e) {
+            System.out.println("Normal short click failed for " + elementName + ". Trying JavaScript click. Error: " + e.getMessage());
+            ((JavascriptExecutor) driver).executeScript("arguments[0].click();", element);
+        }
+
         waitForDocumentReady();
         waitQuietly(1000);
         switchToLatestWindow();
@@ -461,6 +591,7 @@ public class PolicyInquiryTest {
 
         takeScreenshotQuietly("element-not-found-" + sanitizeFileName(elementName));
         printPageDiagnostics("element not found: " + elementName);
+        printPageDiagnosticsDeep("element not found: " + elementName);
         printAllLinks("element not found: " + elementName);
         printAllInputs("element not found: " + elementName);
 
@@ -521,6 +652,137 @@ public class PolicyInquiryTest {
         }
 
         return null;
+    }
+
+    private WebElement findFirstVisibleElementDeep(
+            By[] locators,
+            String elementName,
+            boolean switchToElementFrame,
+            boolean inputOnly,
+            boolean selectOnly
+    ) {
+        driver.switchTo().defaultContent();
+
+        for (By locator : locators) {
+            WebElement found = findFirstVisibleElementInContextOrFrames(locator, 0, switchToElementFrame, inputOnly, selectOnly);
+
+            if (found != null) {
+                System.out.println("Found " + elementName + " using locator: " + locator);
+                return found;
+            }
+
+            driver.switchTo().defaultContent();
+        }
+
+        System.out.println("Unable to find " + elementName + " using deep frame search.");
+        printPageDiagnosticsDeep("unable to find " + elementName);
+        return null;
+    }
+
+    private WebElement findFirstVisibleElementInContextOrFrames(
+            By locator,
+            int depth,
+            boolean stayInFoundFrame,
+            boolean inputOnly,
+            boolean selectOnly
+    ) {
+        if (depth > 10) {
+            return null;
+        }
+
+        List<WebElement> elements = driver.findElements(locator);
+
+        for (WebElement element : elements) {
+            try {
+                if (!element.isDisplayed() || !element.isEnabled()) {
+                    continue;
+                }
+
+                String tag = element.getTagName();
+
+                if (inputOnly && !"input".equalsIgnoreCase(tag)) {
+                    continue;
+                }
+
+                if (selectOnly && !"select".equalsIgnoreCase(tag)) {
+                    continue;
+                }
+
+                return element;
+            } catch (StaleElementReferenceException ignored) {
+                // Try next element
+            }
+        }
+
+        List<WebElement> frames = driver.findElements(By.cssSelector("frame, iframe"));
+        System.out.println("Deep search frame count at depth " + depth + ": " + frames.size());
+
+        for (int i = 0; i < frames.size(); i++) {
+            try {
+                driver.switchTo().frame(i);
+
+                WebElement found = findFirstVisibleElementInContextOrFrames(
+                        locator,
+                        depth + 1,
+                        stayInFoundFrame,
+                        inputOnly,
+                        selectOnly
+                );
+
+                if (found != null) {
+                    return found;
+                }
+
+                driver.switchTo().parentFrame();
+            } catch (NoSuchFrameException | StaleElementReferenceException ignored) {
+                driver.switchTo().defaultContent();
+            }
+        }
+
+        if (depth == 0) {
+            driver.switchTo().defaultContent();
+        }
+
+        return null;
+    }
+
+    private void clearAndType(WebElement element, String value) {
+        try {
+            element.clear();
+        } catch (Exception e) {
+            System.out.println("Clear failed, continuing with typing: " + e.getMessage());
+        }
+
+        element.sendKeys(value);
+    }
+
+    private void selectCompanyValue(WebElement selectElement, String companyValue) {
+        try {
+            Select select = new Select(selectElement);
+
+            try {
+                select.selectByVisibleText(companyValue);
+                System.out.println("Selected company by visible text: " + companyValue);
+                return;
+            } catch (Exception ignored) {
+                // Try value
+            }
+
+            try {
+                select.selectByValue(companyValue);
+                System.out.println("Selected company by value: " + companyValue);
+                return;
+            } catch (Exception ignored) {
+                // Try first option
+            }
+
+            if (!select.getOptions().isEmpty()) {
+                select.selectByIndex(0);
+                System.out.println("Selected first company option as fallback.");
+            }
+        } catch (Exception e) {
+            System.out.println("Unable to select company. Assuming default is correct. Error: " + e.getMessage());
+        }
     }
 
     private boolean waitUntilTextAppearsInDefaultOrFrames(String text, int timeoutSeconds) {
@@ -621,6 +883,104 @@ public class PolicyInquiryTest {
         }
     }
 
+    private void printPageDiagnosticsDeep(String label) {
+        try {
+            driver.switchTo().defaultContent();
+
+            System.out.println("===== DEEP PAGE DIAGNOSTICS: " + label + " =====");
+            printCurrentContextDiagnostics("default content", 0);
+
+            inspectFramesRecursive(0, "default");
+            driver.switchTo().defaultContent();
+        } catch (Exception e) {
+            System.out.println("Unable to print deep diagnostics: " + e.getMessage());
+        }
+    }
+
+    private void inspectFramesRecursive(int depth, String path) {
+        if (depth > 10) {
+            return;
+        }
+
+        List<WebElement> frames = driver.findElements(By.cssSelector("frame, iframe"));
+
+        System.out.println("Frame path [" + path + "] depth [" + depth + "] frame count: " + frames.size());
+
+        for (int i = 0; i < frames.size(); i++) {
+            try {
+                driver.switchTo().frame(i);
+
+                String framePath = path + " > frame[" + i + "]";
+                printCurrentContextDiagnostics(framePath, depth + 1);
+
+                inspectFramesRecursive(depth + 1, framePath);
+
+                driver.switchTo().parentFrame();
+            } catch (Exception e) {
+                System.out.println("Unable to inspect frame path " + path + " frame[" + i + "]: " + e.getMessage());
+                driver.switchTo().defaultContent();
+            }
+        }
+    }
+
+    private void printCurrentContextDiagnostics(String contextName, int depth) {
+        try {
+            List<WebElement> inputs = driver.findElements(By.cssSelector("input"));
+            List<WebElement> selects = driver.findElements(By.cssSelector("select"));
+            List<WebElement> buttons = driver.findElements(By.cssSelector("button"));
+            List<WebElement> links = driver.findElements(By.cssSelector("a"));
+
+            System.out.println("----- Context: " + contextName + ", depth: " + depth + " -----");
+            System.out.println("URL: " + driver.getCurrentUrl());
+            System.out.println("Title: " + driver.getTitle());
+            System.out.println("Inputs: " + inputs.size());
+            System.out.println("Selects: " + selects.size());
+            System.out.println("Buttons: " + buttons.size());
+            System.out.println("Links: " + links.size());
+            System.out.println("Source length: " + driver.getPageSource().length());
+
+            for (int i = 0; i < inputs.size(); i++) {
+                WebElement input = inputs.get(i);
+                System.out.println(
+                        "Input[" + i + "]" +
+                                " type=[" + safeAttribute(input, "type") + "]" +
+                                " name=[" + safeAttribute(input, "name") + "]" +
+                                " id=[" + safeAttribute(input, "id") + "]" +
+                                " value=[" + safeAttribute(input, "value") + "]" +
+                                " alt=[" + safeAttribute(input, "alt") + "]" +
+                                " displayed=[" + safeIsDisplayed(input) + "]" +
+                                " enabled=[" + safeIsEnabled(input) + "]"
+                );
+            }
+
+            for (int i = 0; i < selects.size(); i++) {
+                WebElement select = selects.get(i);
+                System.out.println(
+                        "Select[" + i + "]" +
+                                " name=[" + safeAttribute(select, "name") + "]" +
+                                " id=[" + safeAttribute(select, "id") + "]" +
+                                " displayed=[" + safeIsDisplayed(select) + "]" +
+                                " enabled=[" + safeIsEnabled(select) + "]"
+                );
+            }
+
+            for (int i = 0; i < buttons.size(); i++) {
+                WebElement button = buttons.get(i);
+                System.out.println(
+                        "Button[" + i + "]" +
+                                " text=[" + safeText(button) + "]" +
+                                " type=[" + safeAttribute(button, "type") + "]" +
+                                " name=[" + safeAttribute(button, "name") + "]" +
+                                " id=[" + safeAttribute(button, "id") + "]" +
+                                " displayed=[" + safeIsDisplayed(button) + "]" +
+                                " enabled=[" + safeIsEnabled(button) + "]"
+                );
+            }
+        } catch (Exception e) {
+            System.out.println("Unable to print context diagnostics for " + contextName + ": " + e.getMessage());
+        }
+    }
+
     private void printAllLinks(String label) {
         try {
             driver.switchTo().defaultContent();
@@ -668,6 +1028,22 @@ public class PolicyInquiryTest {
             }
         } catch (Exception e) {
             System.out.println("Unable to print input diagnostics: " + e.getMessage());
+        }
+    }
+
+    private boolean safeIsDisplayed(WebElement element) {
+        try {
+            return element.isDisplayed();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private boolean safeIsEnabled(WebElement element) {
+        try {
+            return element.isEnabled();
+        } catch (Exception e) {
+            return false;
         }
     }
 
@@ -746,4 +1122,3 @@ public class PolicyInquiryTest {
         }
     }
 }
-import org.openqa.selenium.Alert;
