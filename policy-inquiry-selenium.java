@@ -102,7 +102,12 @@ public class PolicyInquiryTest {
         waitQuietly(3000);
         takeScreenshot("03-login-submitted");
 
-        clickOkIfPresent("after login submit");
+        /*
+         * IMPORTANT FIX:
+         * After login, Ingenium shows a bottom-center OK button.
+         * This OK may be inside a footer frame or image/input element.
+         */
+        clickPostLoginOkButton();
 
         waitQuietly(10000);
         waitForDocumentReady();
@@ -219,143 +224,161 @@ public class PolicyInquiryTest {
             typeFirstAvailable("name", new By[]{
                     By.name("name"),
                     By.id("name"),
-                    By.name("Name"),
-                    By.id("Name"),
-                    By.name("NAME"),
-                    By.id("NAME"),
-                    By.name("username"),
-                    By.id("username"),
-                    By.name("user"),
-                    By.id("user"),
-                    By.name("USER"),
-                    By.id("USER"),
-                    By.cssSelector("input[name*='name' i]"),
-                    By.cssSelector("input[id*='name' i]"),
-                    By.cssSelector("input[name*='user' i]"),
-                    By.cssSelector("input[id*='user' i]"),
-                    By.cssSelector("input[type='text']")
-            }, username);
+ element = findClickableElementInCurrentContext(locator);                    By.name("Name"),
 
-            typeFirstAvailable("password", new By[]{
-                    By.name("password"),
-                    By.id("password"),
-                    By.name("Password"),
-                    By.id("Password"),
-                    By.name("PASSWORD"),
-                    By.id("PASSWORD"),
-                    By.cssSelector("input[type='password']"),
-                    By.cssSelector("input[name*='password' i]"),
-                    By.cssSelector("input[id*='password' i]")
-            }, password);
-
-            typeIfAvailable("company", new By[]{
-                    By.name("company"),
-                    By.id("company"),
-                    By.name("Company"),
-                    By.id("Company"),
-                    By.name("COMPANY"),
-                    By.id("COMPANY"),
-                    By.cssSelector("input[name*='company' i]"),
-                    By.cssSelector("input[id*='company' i]"),
-                    By.cssSelector("select[name*='company' i]"),
-                    By.cssSelector("select[id*='company' i]"),
-                    By.cssSelector("select")
-            }, company);
-
-            return true;
-        } catch (Exception e) {
-            System.out.println("Standard login field strategy failed: " + e.getMessage());
-            takeScreenshotQuietly("standard-login-fields-failed");
-            printPageDiagnosticsDeep("standard login failed");
-            return false;
+        if (element != null) {
+            return element;
         }
+
+        List<WebElement> frames = driver.findElements(By.cssSelector("frame, iframe"));
+        System.out.println("Post-login OK search frame count at depth " + depth + ": " + frames.size());
+
+        for (int i = 0; i < frames.size(); i++) {
+            try {
+                driver.switchTo().frame(i);
+
+                WebElement frameElement = findClickableElementInCurrentContextOrFrames(locator, depth + 1);
+
+                if (frameElement != null) {
+                    return frameElement;
+                }
+
+                driver.switchTo().parentFrame();
+            } catch (NoSuchFrameException | StaleElementReferenceException ignored) {
+                driver.switchTo().defaultContent();
+            } catch (Exception e) {
+                System.out.println("Unable to inspect frame while searching OK: " + e.getMessage());
+                driver.switchTo().defaultContent();
+            }
+        }
+
+        if (depth == 0) {
+            driver.switchTo().defaultContent();
+        }
+
+        return null;
     }
 
-    private void fillLegacyLoginFormByFieldTypeAndPosition() {
-        WebElement nameInput = findFirstVisibleElementDeep(new By[]{
-                By.cssSelector("input[type='text']"),
-                By.cssSelector("input:not([type])"),
-                By.cssSelector("input[type='']"),
-                By.cssSelector("input")
-        }, "legacy name text input", true, true, false);
+    private WebElement findClickableElementInCurrentContext(By locator) {
+        List<WebElement> elements = driver.findElements(locator);
 
-        WebElement passwordInput = findFirstVisibleElementDeep(new By[]{
-                By.cssSelector("input[type='password']")
-        }, "legacy password input", true, true, false);
+        for (WebElement element : elements) {
+            try {
+                if (!element.isDisplayed() || !element.isEnabled()) {
+                    continue;
+                }
 
-        if (nameInput == null) {
-            throw new RuntimeException("Unable to find legacy Name input on login page.");
+                System.out.println(
+                        "Candidate OK element tag=[" + element.getTagName() + "]" +
+                                ", text=[" + safeText(element) + "]" +
+                                ", value=[" + safeAttribute(element, "value") + "]" +
+                                ", alt=[" + safeAttribute(element, "alt") + "]" +
+                                ", title=[" + safeAttribute(element, "title") + "]" +
+                                ", src=[" + safeAttribute(element, "src") + "]"
+                );
+
+                return element;
+            } catch (StaleElementReferenceException ignored) {
+                // Try next element
+            }
         }
 
-        if (passwordInput == null) {
-            throw new RuntimeException("Unable to find legacy Password input on login page.");
-        }
-
-        clearAndType(nameInput, username);
-        System.out.println("Entered username into legacy Name field.");
-
-        clearAndType(passwordInput, password);
-        System.out.println("Entered password into legacy Password field.");
-
-        WebElement companySelect = findFirstVisibleElementDeep(new By[]{
-                By.cssSelector("select"),
-                By.cssSelector("select[name*='company' i]"),
-                By.cssSelector("select[id*='company' i]")
-        }, "legacy company select", true, false, true);
-
-        if (companySelect != null) {
-            selectCompanyValue(companySelect, company);
-        } else {
-            System.out.println("No company select found. Assuming Company is already defaulted to Manulife.");
-        }
+        return null;
     }
 
-    private boolean clickLoginSubmitIfAvailable() {
-        WebElement submit = findFirstVisibleElementDeep(new By[]{
-                By.cssSelector("input[type='submit']"),
-                By.cssSelector("input[type='image']"),
-                By.cssSelector("button[type='submit']"),
-                By.cssSelector("button"),
-                By.xpath("//input[contains(translate(@value,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'submit')]"),
-                By.xpath("//button[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'submit')]"),
-                By.xpath("//input[contains(translate(@alt,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'submit')]"),
-                By.xpath("//img[contains(translate(@alt,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'submit')]"),
-                By.xpath("//*[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'submit')]")
-        }, "legacy submit", true, false, false);
-
-        if (submit == null) {
-            return false;
+    private void clickElementRobustly(WebElement element, String label) {
+        try {
+            ((JavascriptExecutor) driver).executeScript(
+                    "arguments[0].scrollIntoView({block:'center', inline:'center'});",
+                    element
+            );
+            waitQuietly(500);
+        } catch (Exception ignored) {
+            // Continue
         }
 
         try {
-            submit.click();
-            System.out.println("Clicked login submit.");
-            return true;
+            element.click();
+            System.out.println("Clicked " + label + " using normal Selenium click.");
+            return;
         } catch (Exception e) {
-            System.out.println("Normal submit click failed. Trying JavaScript click. Error: " + e.getMessage());
+            System.out.println("Normal click failed for " + label + ": " + e.getMessage());
+        }
 
+        try {
+            ((JavascriptExecutor) driver).executeScript("arguments[0].click();", element);
+            System.out.println("Clicked " + label + " using JavaScript click.");
+        } catch (Exception e) {
+            throw new RuntimeException("JavaScript click failed for " + label + ": " + e.getMessage(), e);
+        }
+    }
+
+    private boolean clickBottomCenterOkFallback() {
+        try {
+            driver.switchTo().defaultContent();
+            Boolean clicked = clickBottomCenterInCurrentContextOrFrames(0);
+            return Boolean.TRUE.equals(clicked);
+        } catch (Exception e) {
+            System.out.println("Bottom-center OK fallback failed: " + e.getMessage());
+            return false;
+        } finally {
             try {
-                ((JavascriptExecutor) driver).executeScript("arguments[0].click();", submit);
-                System.out.println("Clicked login submit using JavaScript.");
-                return true;
-            } catch (Exception jsError) {
-                System.out.println("JavaScript submit click failed: " + jsError.getMessage());
-                return false;
+                driver.switchTo().defaultContent();
+            } catch (Exception ignored) {
+                // Ignore
             }
         }
     }
 
-    private void pressEnterOnPasswordField() {
-        WebElement passwordInput = findFirstVisibleElementDeep(new By[]{
-                By.cssSelector("input[type='password']")
-        }, "password enter fallback", true, true, false);
-
-        if (passwordInput == null) {
-            throw new RuntimeException("Unable to find password field for ENTER fallback.");
+    private Boolean clickBottomCenterInCurrentContextOrFrames(int depth) {
+        if (depth > 10) {
+            return false;
         }
 
-        passwordInput.sendKeys(Keys.ENTER);
-        System.out.println("Pressed ENTER on password field.");
+        try {
+            Object result = ((JavascriptExecutor) driver).executeScript(
+                    "var x = Math.floor(window.innerWidth / 2);" +
+                            "var y = Math.max(0, window.innerHeight - 18);" +
+                            "var el = document.elementFromPoint(x, y);" +
+                            "if (el) {" +
+                            "  el.click();" +
+                            "  return true;" +
+                            "}" +
+                            "return false;"
+            );
+
+            if (Boolean.TRUE.equals(result)) {
+                System.out.println("Clicked bottom-center element in current context at depth " + depth);
+                return true;
+            }
+        } catch (Exception e) {
+            System.out.println("Bottom-center click in current context failed at depth " + depth + ": " + e.getMessage());
+        }
+
+        List<WebElement> frames = driver.findElements(By.cssSelector("frame, iframe"));
+
+        for (int i = 0; i < frames.size(); i++) {
+            try {
+                driver.switchTo().frame(i);
+
+                Boolean clicked = clickBottomCenterInCurrentContextOrFrames(depth + 1);
+
+                if (Boolean.TRUE.equals(clicked)) {
+                    return true;
+                }
+
+                driver.switchTo().parentFrame();
+            } catch (Exception e) {
+                System.out.println("Bottom-center fallback unable to inspect frame " + i + " at depth " + depth + ": " + e.getMessage());
+                driver.switchTo().defaultContent();
+            }
+        }
+
+        if (depth == 0) {
+            driver.switchTo().defaultContent();
+        }
+
+        return false;
     }
 
     private void clickPolicyInquiry() {
@@ -428,6 +451,8 @@ public class PolicyInquiryTest {
                     By.name("submit"),
                     By.cssSelector("button[type='submit']"),
                     By.cssSelector("input[type='submit']"),
+                    By.cssSelector("input[type='button']"),
+                    By.cssSelector("input[type='image']"),
                     By.xpath("//button[translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='OK']"),
                     By.xpath("//input[translate(@value,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='OK']"),
                     By.xpath("//button[contains(translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
@@ -453,6 +478,10 @@ public class PolicyInquiryTest {
                     By.name("ok"),
                     By.id("OK"),
                     By.name("OK"),
+                    By.cssSelector("input[type='image']"),
+                    By.cssSelector("input[alt*='ok' i]"),
+                    By.cssSelector("img[alt*='ok' i]"),
+                    By.cssSelector("img[src*='ok' i]"),
                     By.xpath("//button[translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='OK']"),
                     By.xpath("//input[translate(@value,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='OK']"),
                     By.xpath("//button[contains(translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
@@ -482,18 +511,14 @@ public class PolicyInquiryTest {
 
     private void typeFirstAvailable(String fieldName, By[] locators, String value) {
         WebElement element = findFirstAvailableElement(fieldName, locators, true, 45);
-
         clearAndType(element, value);
-
         System.out.println("Entered value for field: " + fieldName);
     }
 
     private void typeIfAvailable(String fieldName, By[] locators, String value) {
         try {
             WebElement element = findFirstAvailableElement(fieldName, locators, true, 8);
-
             clearAndType(element, value);
-
             System.out.println("Entered optional value for field: " + fieldName);
         } catch (Exception e) {
             System.out.println("Optional field not found: " + fieldName + ". Continuing.");
@@ -502,13 +527,7 @@ public class PolicyInquiryTest {
 
     private void clickFirstAvailable(String elementName, By[] locators) {
         WebElement element = findFirstAvailableElement(elementName, locators, false, 45);
-
-        try {
-            element.click();
-        } catch (Exception e) {
-            System.out.println("Normal click failed for " + elementName + ". Trying JavaScript click. Error: " + e.getMessage());
-            ((JavascriptExecutor) driver).executeScript("arguments[0].click();", element);
-        }
+        clickElementRobustly(element, elementName);
 
         waitForDocumentReady();
         waitQuietly(2000);
@@ -519,13 +538,7 @@ public class PolicyInquiryTest {
 
     private void clickFirstAvailableShort(String elementName, By[] locators) {
         WebElement element = findFirstAvailableElement(elementName, locators, false, 8);
-
-        try {
-            element.click();
-        } catch (Exception e) {
-            System.out.println("Normal short click failed for " + elementName + ". Trying JavaScript click. Error: " + e.getMessage());
-            ((JavascriptExecutor) driver).executeScript("arguments[0].click();", element);
-        }
+        clickElementRobustly(element, elementName);
 
         waitForDocumentReady();
         waitQuietly(1000);
@@ -792,7 +805,6 @@ public class PolicyInquiryTest {
             return textWait.until(webDriver -> {
                 try {
                     webDriver.switchTo().defaultContent();
-
                     return pageSourceContainsTextInCurrentContextOrFrames(text, 0);
                 } catch (Exception e) {
                     return false;
@@ -1122,3 +1134,250 @@ public class PolicyInquiryTest {
         }
     }
 }
+                    By.id("Name"),
+                    By.name("NAME"),
+                    By.id("NAME"),
+                    By.name("username"),
+                    By.id("username"),
+                    By.name("user"),
+                    By.id("user"),
+                    By.name("USER"),
+                    By.id("USER"),
+                    By.cssSelector("input[name*='name' i]"),
+                    By.cssSelector("input[id*='name' i]"),
+                    By.cssSelector("input[name*='user' i]"),
+                    By.cssSelector("input[id*='user' i]"),
+                    By.cssSelector("input[type='text']")
+            }, username);
+
+            typeFirstAvailable("password", new By[]{
+                    By.name("password"),
+                    By.id("password"),
+                    By.name("Password"),
+                    By.id("Password"),
+                    By.name("PASSWORD"),
+                    By.id("PASSWORD"),
+                    By.cssSelector("input[type='password']"),
+                    By.cssSelector("input[name*='password' i]"),
+                    By.cssSelector("input[id*='password' i]")
+            }, password);
+
+            typeIfAvailable("company", new By[]{
+                    By.name("company"),
+                    By.id("company"),
+                    By.name("Company"),
+                    By.id("Company"),
+                    By.name("COMPANY"),
+                    By.id("COMPANY"),
+                    By.cssSelector("input[name*='company' i]"),
+                    By.cssSelector("input[id*='company' i]"),
+                    By.cssSelector("select[name*='company' i]"),
+                    By.cssSelector("select[id*='company' i]"),
+                    By.cssSelector("select")
+            }, company);
+
+            return true;
+        } catch (Exception e) {
+            System.out.println("Standard login field strategy failed: " + e.getMessage());
+            takeScreenshotQuietly("standard-login-fields-failed");
+            printPageDiagnosticsDeep("standard login failed");
+            return false;
+        }
+    }
+
+    private void fillLegacyLoginFormByFieldTypeAndPosition() {
+        WebElement nameInput = findFirstVisibleElementDeep(new By[]{
+                By.cssSelector("input[type='text']"),
+                By.cssSelector("input:not([type])"),
+                By.cssSelector("input[type='']"),
+                By.cssSelector("input")
+        }, "legacy name text input", true, true, false);
+
+        WebElement passwordInput = findFirstVisibleElementDeep(new By[]{
+                By.cssSelector("input[type='password']")
+        }, "legacy password input", true, true, false);
+
+        if (nameInput == null) {
+            throw new RuntimeException("Unable to find legacy Name input on login page.");
+        }
+
+        if (passwordInput == null) {
+            throw new RuntimeException("Unable to find legacy Password input on login page.");
+        }
+
+        clearAndType(nameInput, username);
+        System.out.println("Entered username into legacy Name field.");
+
+        clearAndType(passwordInput, password);
+        System.out.println("Entered password into legacy Password field.");
+
+        WebElement companySelect = findFirstVisibleElementDeep(new By[]{
+                By.cssSelector("select"),
+                By.cssSelector("select[name*='company' i]"),
+                By.cssSelector("select[id*='company' i]")
+        }, "legacy company select", true, false, true);
+
+        if (companySelect != null) {
+            selectCompanyValue(companySelect, company);
+        } else {
+            System.out.println("No company select found. Assuming Company is already defaulted to Manulife.");
+        }
+    }
+
+    private boolean clickLoginSubmitIfAvailable() {
+        WebElement submit = findFirstVisibleElementDeep(new By[]{
+                By.cssSelector("input[type='submit']"),
+                By.cssSelector("input[type='image']"),
+                By.cssSelector("button[type='submit']"),
+                By.cssSelector("button"),
+                By.xpath("//input[contains(translate(@value,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'submit')]"),
+                By.xpath("//button[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'submit')]"),
+                By.xpath("//input[contains(translate(@alt,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'submit')]"),
+                By.xpath("//img[contains(translate(@alt,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'submit')]"),
+                By.xpath("//*[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'submit')]")
+        }, "legacy submit", true, false, false);
+
+        if (submit == null) {
+            return false;
+        }
+
+        try {
+            submit.click();
+            System.out.println("Clicked login submit.");
+            return true;
+        } catch (Exception e) {
+            System.out.println("Normal submit click failed. Trying JavaScript click. Error: " + e.getMessage());
+
+            try {
+                ((JavascriptExecutor) driver).executeScript("arguments[0].click();", submit);
+                System.out.println("Clicked login submit using JavaScript.");
+                return true;
+            } catch (Exception jsError) {
+                System.out.println("JavaScript submit click failed: " + jsError.getMessage());
+                return false;
+            }
+        }
+    }
+
+    private void pressEnterOnPasswordField() {
+        WebElement passwordInput = findFirstVisibleElementDeep(new By[]{
+                By.cssSelector("input[type='password']")
+        }, "password enter fallback", true, true, false);
+
+        if (passwordInput == null) {
+            throw new RuntimeException("Unable to find password field for ENTER fallback.");
+        }
+
+        passwordInput.sendKeys(Keys.ENTER);
+        System.out.println("Pressed ENTER on password field.");
+    }
+
+    /*
+     * NEW METHOD:
+     * Clicks the post-login Ingenium bottom OK button.
+     */
+    private void clickPostLoginOkButton() {
+        System.out.println("Trying to click post-login bottom OK button.");
+
+        waitForDocumentReady();
+        waitQuietly(3000);
+        switchToLatestWindow();
+
+        if (acceptAlertIfPresent("post-login OK")) {
+            return;
+        }
+
+        try {
+            WebElement okElement = findPostLoginOkElementInDefaultOrFrames(30);
+
+            if (okElement != null) {
+                clickElementRobustly(okElement, "post-login bottom OK");
+                waitForDocumentReady();
+                waitQuietly(3000);
+                switchToLatestWindow();
+                System.out.println("Post-login OK clicked successfully using locator/frame search.");
+                return;
+            }
+        } catch (Exception e) {
+            System.out.println("Post-login OK locator/frame search failed: " + e.getMessage());
+        }
+
+        System.out.println("Trying post-login OK coordinate fallback at bottom center.");
+
+        if (clickBottomCenterOkFallback()) {
+            waitForDocumentReady();
+            waitQuietly(3000);
+            switchToLatestWindow();
+            System.out.println("Post-login OK clicked successfully using bottom-center fallback.");
+            return;
+        }
+
+        takeScreenshotQuietly("post-login-ok-not-clicked");
+        printPageDiagnostics("post-login OK not clicked");
+        printPageDiagnosticsDeep("post-login OK not clicked");
+        printAllInputs("post-login OK not clicked");
+        printAllLinks("post-login OK not clicked");
+
+        throw new RuntimeException("Unable to click post-login OK button.");
+    }
+
+    private WebElement findPostLoginOkElementInDefaultOrFrames(int timeoutSeconds) {
+        WebDriverWait okWait = new WebDriverWait(driver, Duration.ofSeconds(timeoutSeconds));
+
+        return okWait.until(webDriver -> {
+            try {
+                webDriver.switchTo().defaultContent();
+
+                By[] okLocators = new By[]{
+                        By.id("ok"),
+                        By.name("ok"),
+                        By.id("OK"),
+                        By.name("OK"),
+
+                        By.cssSelector("input[type='submit'][value='OK']"),
+                        By.cssSelector("input[type='button'][value='OK']"),
+                        By.cssSelector("input[type='image']"),
+                        By.cssSelector("input[src*='ok' i]"),
+                        By.cssSelector("input[alt*='ok' i]"),
+                        By.cssSelector("input[title*='ok' i]"),
+
+                        By.cssSelector("img[alt*='ok' i]"),
+                        By.cssSelector("img[title*='ok' i]"),
+                        By.cssSelector("img[src*='ok' i]"),
+
+                        By.cssSelector("area[alt*='ok' i]"),
+                        By.cssSelector("area[title*='ok' i]"),
+                        By.cssSelector("area[href*='ok' i]"),
+
+                        By.xpath("//button[normalize-space(translate(.,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'))='OK']"),
+                        By.xpath("//input[normalize-space(translate(@value,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'))='OK']"),
+                        By.xpath("//a[normalize-space(translate(.,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'))='OK']"),
+                        By.xpath("//*[normalize-space(translate(.,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'))='OK']"),
+
+                        By.xpath("//button[contains(translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
+                        By.xpath("//input[contains(translate(@value,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
+                        By.xpath("//input[contains(translate(@alt,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
+                        By.xpath("//img[contains(translate(@alt,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
+                        By.xpath("//img[contains(translate(@src,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]")
+                };
+
+                for (By locator : okLocators) {
+                    WebElement element = findClickableElementInCurrentContextOrFrames(locator, 0);
+
+                    if (element != null) {
+                        System.out.println("Found post-login OK using locator: " + locator);
+                        return element;
+                    }
+                }
+
+                return null;
+            } catch (Exception e) {
+                return null;
+            }
+        });
+    }
+
+    private WebElement findClickableElementInCurrentContextOrFrames(By locator, int depth) {
+        if (depth > 10) {
+            return null;
+        }
