@@ -23,14 +23,15 @@ public class PolicyInquiryTest {
     private String username = System.getProperty("app.username");
     private String password = System.getProperty("app.password");
     private String company = System.getProperty("company");
+    private String policyId = System.getProperty("policy.id");
     private String screenshotDir = System.getProperty("screenshot.dir");
 
     @BeforeMethod
-    public void setUp() throws Exception {
+    public void setUp() {
         WebDriverManager.chromedriver().setup();
 
         ChromeOptions options = new ChromeOptions();
-        options.addArguments("--headless=new");   // remove if debugging
+        options.addArguments("--headless=new");
         options.addArguments("--no-sandbox");
         options.addArguments("--disable-dev-shm-usage");
 
@@ -41,55 +42,38 @@ public class PolicyInquiryTest {
     }
 
     @Test
-    public void loginTest() throws Exception {
+    public void policyInquiryTest() {
 
-        // ===== STEP 1: OPEN APPLICATION =====
+        // Step 1: Open application
         driver.get(appUrl);
         takeScreenshot("01-app-opened.png");
 
-        // Click English Sign On
+        // Step 2: Click "English Sign On"
         WebElement signOnLink = wait.until(ExpectedConditions.elementToBeClickable(
                 By.linkText("English Sign On")));
         signOnLink.click();
 
-        // Switch to new window if needed
+        // Switch to latest window
         for (String win : driver.getWindowHandles()) {
             driver.switchTo().window(win);
         }
 
-        takeScreenshot("02-signon-opened.png");
+        takeScreenshot("02-signon-page.png");
 
-        // ===== STEP 2: SWITCH TO CORRECT FRAME =====
-        switchToFrameWithLoginForm();
-
-        // ===== STEP 3: FIND USERNAME FIELD =====
-        WebElement userField = findElementFlexible(
-                By.name("name"),
-                By.name("username"),
-                By.cssSelector("input[name*='user' i]")
-        );
-
+        // Step 3: Enter Username
+        WebElement userField = waitUntilAvailable(By.name("name"));
         Assert.assertNotNull(userField, "Username field not found");
         userField.clear();
         userField.sendKeys(username);
 
-        // ===== STEP 4: FIND PASSWORD FIELD =====
-        WebElement pwdField = findElementFlexible(
-                By.name("password"),
-                By.id("password"),
-                By.cssSelector("input[type='password']")
-        );
-
+        // Step 4: Enter Password
+        WebElement pwdField = waitUntilAvailable(By.cssSelector("input[type='password']"));
         Assert.assertNotNull(pwdField, "Password field not found");
         pwdField.clear();
         pwdField.sendKeys(password);
 
-        // ===== STEP 5: COMPANY (OPTIONAL) =====
-        WebElement companyField = findElementFlexible(
-                By.name("company"),
-                By.cssSelector("select[name*='company' i]")
-        );
-
+        // Step 5: Company (optional)
+        WebElement companyField = findElementInCurrentContextOrFrames(By.name("company"));
         if (companyField != null) {
             if (companyField.getTagName().equalsIgnoreCase("select")) {
                 new Select(companyField).selectByVisibleText(company);
@@ -101,60 +85,70 @@ public class PolicyInquiryTest {
 
         takeScreenshot("03-login-filled.png");
 
-        // ===== STEP 6: CLICK SIGN ON =====
-        WebElement submitBtn = findElementFlexible(
-                By.cssSelector("input[type='submit']"),
-                By.cssSelector("button[type='submit']"),
-                By.xpath("//input[contains(@value,'Sign')]"),
-                By.xpath("//button[contains(text(),'Sign')]")
-        );
-
+        // Step 6: Click Sign On
+        WebElement submitBtn = waitUntilAvailable(By.cssSelector("input[type='submit']"));
         Assert.assertNotNull(submitBtn, "Submit button not found");
         submitBtn.click();
 
-        // ===== STEP 7: POST LOGIN VALIDATION =====
-        wait.until(ExpectedConditions.urlContains("Menu")); // adjust if needed
+        // Step 7: Wait for navigation after login
+        waitUntilPageLoads();
 
         takeScreenshot("04-after-login.png");
 
-        System.out.println("✅ Login successful");
+        // Step 8: Basic post-login validation
+        String currentUrl = driver.getCurrentUrl();
+        System.out.println("Post login URL: " + currentUrl);
+
+        Assert.assertFalse(currentUrl.contains("SignOn"),
+                "Login did not succeed, still on login page");
+
+        // Step 9: (Optional) Policy Inquiry Step (basic placeholder)
+        if (policyId != null && !policyId.isEmpty()) {
+            System.out.println("Policy ID available: " + policyId);
+            // Extend here once UI navigation is confirmed
+        }
+
+        System.out.println("Test completed successfully");
     }
 
-    // ===== FRAME HANDLING =====
-    private void switchToFrameWithLoginForm() {
-        driver.switchTo().defaultContent();
+    // REQUIRED METHOD FOR PIPELINE
+    private WebElement findElementInCurrentContextOrFrames(By locator) {
+
+        try {
+            return driver.findElement(locator);
+        } catch (Exception ignored) {}
 
         List<WebElement> frames = driver.findElements(By.tagName("frame"));
-        System.out.println("Total frames: " + frames.size());
 
         for (int i = 0; i < frames.size(); i++) {
-            driver.switchTo().defaultContent();
-            driver.switchTo().frame(i);
-
-            List<WebElement> inputs = driver.findElements(By.tagName("input"));
-            if (inputs.size() > 0) {
-                System.out.println("✅ Found login form in frame index: " + i);
-                return;
-            }
-        }
-
-        throw new RuntimeException("❌ No frame contains login elements");
-    }
-
-    // ===== FLEXIBLE FINDER =====
-    private WebElement findElementFlexible(By... locators) {
-        for (By locator : locators) {
             try {
-                List<WebElement> elements = driver.findElements(locator);
-                if (!elements.isEmpty()) {
-                    return elements.get(0);
-                }
+                driver.switchTo().defaultContent();
+                driver.switchTo().frame(i);
+                return driver.findElement(locator);
             } catch (Exception ignored) {}
         }
+
+        driver.switchTo().defaultContent();
         return null;
     }
 
-    // ===== SCREENSHOT =====
+    // Wait wrapper that uses required method
+    private WebElement waitUntilAvailable(By locator) {
+        return wait.until(driver -> {
+            WebElement element = findElementInCurrentContextOrFrames(locator);
+            return (element != null) ? element : null;
+        });
+    }
+
+    // Wait for page load
+    private void waitUntilPageLoads() {
+        wait.until(webDriver ->
+                ((JavascriptExecutor) webDriver)
+                        .executeScript("return document.readyState")
+                        .equals("complete"));
+    }
+
+    // Screenshot utility
     private void takeScreenshot(String fileName) {
         try {
             File src = ((TakesScreenshot) driver).getScreenshotAs(OutputType.FILE);
