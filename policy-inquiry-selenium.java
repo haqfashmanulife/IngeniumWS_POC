@@ -1,8 +1,6 @@
 package com.manulife.ingenium.tests;
 
-import io.github.bonigarcia.wdm.WebDriverManager;
-import org.openqa.selenium.Alert;
-import org.openqa.selenium.By;
+import io.github.bonigarcia.wdm.WebDriverManager.selenium.By;import io.github.bonigarcia.wdm.WebDriverManager;
 import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.NoAlertPresentException;
 import org.openqa.selenium.NoSuchFrameException;
@@ -637,9 +635,9 @@ public class PolicyInquiryTest {
 
                 System.out.println(
                         "Link[" + i + "] text=[" + safeText(link) + "]" +
-                        ", href=[" + safeAttribute(link, "href") + "]" +
-                        ", target=[" + safeAttribute(link, "target") + "]" +
-                        ", onclick=[" + safeAttribute(link, "onclick") + "]"
+                                ", href=[" + safeAttribute(link, "href") + "]" +
+                                ", target=[" + safeAttribute(link, "target") + "]" +
+                                ", onclick=[" + safeAttribute(link, "onclick") + "]"
                 );
             }
         } catch (Exception e) {
@@ -661,11 +659,11 @@ public class PolicyInquiryTest {
 
                 System.out.println(
                         "Element[" + i + "] tag=[" + input.getTagName() + "]" +
-                        ", type=[" + safeAttribute(input, "type") + "]" +
-                        ", name=[" + safeAttribute(input, "name") + "]" +
-                        ", id=[" + safeAttribute(input, "id") + "]" +
-                        ", value=[" + safeAttribute(input, "value") + "]" +
-                        ", text=[" + safeText(input) + "]"
+                                ", type=[" + safeAttribute(input, "type") + "]" +
+                                ", name=[" + safeAttribute(input, "name") + "]" +
+                                ", id=[" + safeAttribute(input, "id") + "]" +
+                                ", value=[" + safeAttribute(input, "value") + "]" +
+                                ", text=[" + safeText(input) + "]"
                 );
             }
         } catch (Exception e) {
@@ -748,3 +746,4 @@ public class PolicyInquiryTest {
         }
     }
 }
+import org.openqa.selenium.Alert;
