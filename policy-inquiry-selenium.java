@@ -8,9 +8,6 @@ import org.openqa.selenium.support.ui.*;
 import org.testng.Assert;
 import org.testng.annotations.*;
 
-import java.io.File;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 
@@ -22,12 +19,10 @@ public class PolicyInquiryTest {
     private String appUrl = System.getProperty("app.url");
     private String username = System.getProperty("app.username");
     private String password = System.getProperty("app.password");
-    private String company = System.getProperty("company");
-    private String policyId = System.getProperty("policy.id");
-    private String screenshotDir = System.getProperty("screenshot.dir");
 
     @BeforeMethod
     public void setUp() {
+
         WebDriverManager.chromedriver().setup();
 
         ChromeOptions options = new ChromeOptions();
@@ -37,81 +32,39 @@ public class PolicyInquiryTest {
 
         driver = new ChromeDriver(options);
         wait = new WebDriverWait(driver, Duration.ofSeconds(30));
-
-        driver.manage().window().setSize(new Dimension(1920, 1080));
     }
 
     @Test
-    public void policyInquiryTest() {
+    public void loginTest() {
 
-        // Step 1: Open application
         driver.get(appUrl);
-        takeScreenshot("01-app-opened.png");
 
-        // Step 2: Click "English Sign On"
-        WebElement signOnLink = wait.until(ExpectedConditions.elementToBeClickable(
+        WebElement signOn = wait.until(ExpectedConditions.elementToBeClickable(
                 By.linkText("English Sign On")));
-        signOnLink.click();
+        signOn.click();
 
-        // Switch to latest window
         for (String win : driver.getWindowHandles()) {
             driver.switchTo().window(win);
         }
 
-        takeScreenshot("02-signon-page.png");
+        WebElement user = waitUntilAvailable(By.name("name"));
+        user.sendKeys(username);
 
-        // Step 3: Enter Username
-        WebElement userField = waitUntilAvailable(By.name("name"));
-        Assert.assertNotNull(userField, "Username field not found");
-        userField.clear();
-        userField.sendKeys(username);
+        WebElement pass = waitUntilAvailable(By.cssSelector("input[type='password']"));
+        pass.sendKeys(password);
 
-        // Step 4: Enter Password
-        WebElement pwdField = waitUntilAvailable(By.cssSelector("input[type='password']"));
-        Assert.assertNotNull(pwdField, "Password field not found");
-        pwdField.clear();
-        pwdField.sendKeys(password);
+        WebElement login = waitUntilAvailable(By.cssSelector("input[type='submit']"));
+        login.click();
 
-        // Step 5: Company (optional)
-        WebElement companyField = findElementInCurrentContextOrFrames(By.name("company"));
-        if (companyField != null) {
-            if (companyField.getTagName().equalsIgnoreCase("select")) {
-                new Select(companyField).selectByVisibleText(company);
-            } else {
-                companyField.clear();
-                companyField.sendKeys(company);
-            }
-        }
+        wait.until(d -> d.getCurrentUrl() != null);
 
-        takeScreenshot("03-login-filled.png");
+        Assert.assertFalse(driver.getCurrentUrl().contains("SignOn"),
+                "Login failed");
 
-        // Step 6: Click Sign On
-        WebElement submitBtn = waitUntilAvailable(By.cssSelector("input[type='submit']"));
-        Assert.assertNotNull(submitBtn, "Submit button not found");
-        submitBtn.click();
-
-        // Step 7: Wait for navigation after login
-        waitUntilPageLoads();
-
-        takeScreenshot("04-after-login.png");
-
-        // Step 8: Basic post-login validation
-        String currentUrl = driver.getCurrentUrl();
-        System.out.println("Post login URL: " + currentUrl);
-
-        Assert.assertFalse(currentUrl.contains("SignOn"),
-                "Login did not succeed, still on login page");
-
-        // Step 9: (Optional) Policy Inquiry Step (basic placeholder)
-        if (policyId != null && !policyId.isEmpty()) {
-            System.out.println("Policy ID available: " + policyId);
-            // Extend here once UI navigation is confirmed
-        }
-
-        System.out.println("Test completed successfully");
+        System.out.println("Login successful");
     }
 
-    // REQUIRED METHOD FOR PIPELINE
+    // REQUIRED FOR PIPELINE
     private WebElement findElementInCurrentContextOrFrames(By locator) {
 
         try {
@@ -132,32 +85,11 @@ public class PolicyInquiryTest {
         return null;
     }
 
-    // Wait wrapper that uses required method
     private WebElement waitUntilAvailable(By locator) {
         return wait.until(driver -> {
-            WebElement element = findElementInCurrentContextOrFrames(locator);
-            return (element != null) ? element : null;
+            WebElement el = findElementInCurrentContextOrFrames(locator);
+            return (el != null) ? el : null;
         });
-    }
-
-    // Wait for page load
-    private void waitUntilPageLoads() {
-        wait.until(webDriver ->
-                ((JavascriptExecutor) webDriver)
-                        .executeScript("return document.readyState")
-                        .equals("complete"));
-    }
-
-    // Screenshot utility
-    private void takeScreenshot(String fileName) {
-        try {
-            File src = ((TakesScreenshot) driver).getScreenshotAs(OutputType.FILE);
-            Path dest = Path.of(screenshotDir, fileName);
-            Files.createDirectories(dest.getParent());
-            Files.copy(src.toPath(), dest);
-        } catch (Exception e) {
-            System.out.println("Screenshot failed: " + e.getMessage());
-        }
     }
 
     @AfterMethod
