@@ -1,54 +1,6 @@
 package com.manulife.ingenium.tests;
 
-import io.github.bonigarcia.wdm.WebDriverManager;
-import org.openqa.selenium.Alert;
-import org.openqa.selenium.By;
-import org.openqa.selenium.JavascriptExecutor;
-import org.openqa.selenium.Keys;
-import org.openqa.selenium.NoAlertPresentException;
-import org.openqa.selenium.NoSuchFrameException;
-import org.openqa.selenium.OutputType;
-import org.openqa.selenium.StaleElementReferenceException;
-import org.openqa.selenium.TakesScreenshot;
-import org.openqa.selenium.TimeoutException;
-import org.openqa.selenium.WebDriver;
-import org.openqa.selenium.WebDriverException;
-import org.openqa.selenium.WebElement;
-import org.openqa.selenium.chrome.ChromeDriver;
-import org.openqa.selenium.chrome.ChromeOptions;
-import org.openqa.selenium.support.ui.ExpectedCondition;
-import org.openqa.selenium.support.ui.ExpectedConditions;
-import org.openqa.selenium.support.ui.Select;
-import org.openqa.selenium.support.ui.WebDriverWait;
-import org.testng.Assert;
-import org.testng.annotations.AfterMethod;
-import org.testng.annotations.BeforeMethod;
-import org.testng.annotations.Test;
-
-import java.io.File;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.time.Duration;
-import java.util.List;
-
-public class PolicyInquiryTest {
-
-    private WebDriver driver;
-    private WebDriverWait wait;
-
-    private String appUrl;
-    private String company;
-    private String username;
-    private String password;
-    private String policyId;
-    private String screenshotDir;
-
-    @BeforeMethod
-    public void setUp() {
-        appUrl = getProperty("app.url", "APP_URL");
-        company = getProperty("company", "COMPANY", "Manulife");
-        username = getProperty("app.username", "APP_USERNAME", "gocc");
-        password = getProperty("app.password", "APP_PASSWORD", "ingenium");
+import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium");import io.github.bonigarcia.wdm.WebDriverManager;
         policyId = getProperty("policy.id", "POLICY_ID");
         screenshotDir = getProperty("screenshot.dir", "SCREENSHOT_DIR", "screenshots");
 
@@ -89,7 +41,7 @@ public class PolicyInquiryTest {
         clickEnglishSignOnIfNeeded();
 
         waitForDocumentReady();
-        waitQuietly(5000);
+        waitQuietly(3000);
         switchToLatestWindow();
         takeScreenshot("02-english-sign-on-opened");
         printPageDiagnostics("after english sign on");
@@ -99,17 +51,12 @@ public class PolicyInquiryTest {
         enterLoginDetailsAndSubmit();
 
         waitForDocumentReady();
-        waitQuietly(3000);
+        waitQuietly(2000);
         takeScreenshot("03-login-submitted");
 
-        /*
-         * IMPORTANT:
-         * After login, Ingenium shows a bottom-center OK button.
-         * This method handles alert, normal DOM OK, image OK, frame OK, and bottom-center fallback.
-         */
         clickIngeniumBottomOkAfterLogin();
 
-        waitQuietly(10000);
+        waitQuietly(3000);
         waitForDocumentReady();
         takeScreenshot("04-after-login-ok-and-wait");
         printPageDiagnostics("after login ok and wait");
@@ -119,7 +66,7 @@ public class PolicyInquiryTest {
         clickPolicyInquiry();
 
         waitForDocumentReady();
-        waitQuietly(3000);
+        waitQuietly(2000);
         takeScreenshot("05-policy-inquiry-clicked");
         printPageDiagnostics("after policy inquiry click");
         printAllLinks("after policy inquiry click");
@@ -127,7 +74,7 @@ public class PolicyInquiryTest {
         clickPolicyInquiryAllDetails();
 
         waitForDocumentReady();
-        waitQuietly(3000);
+        waitQuietly(2000);
         takeScreenshot("06-policy-inquiry-all-details-opened");
         printPageDiagnostics("after policy inquiry all details");
         printAllLinks("after policy inquiry all details");
@@ -135,11 +82,10 @@ public class PolicyInquiryTest {
         enterPolicyIdAndSubmit();
 
         waitForDocumentReady();
-        waitQuietly(5000);
-        takeScreenshot("07-policy-id-submitted");
+        waitQuietly(3000);
         printPageDiagnostics("after policy id submitted");
 
-        boolean policyVisible = waitUntilTextAppearsInDefaultOrFrames(policyId, 45);
+        boolean policyVisible = waitUntilTextAppearsInDefaultOrFrames(policyId, 15);
 
         takeScreenshot("08-policy-result");
 
@@ -166,11 +112,11 @@ public class PolicyInquiryTest {
         });
 
         waitForDocumentReady();
-        waitQuietly(5000);
+        waitQuietly(3000);
         switchToLatestWindow();
 
         try {
-            new WebDriverWait(driver, Duration.ofSeconds(20)).until(webDriver -> {
+            new WebDriverWait(driver, Duration.ofSeconds(15)).until(webDriver -> {
                 webDriver.switchTo().defaultContent();
                 int frames = webDriver.findElements(By.cssSelector("frame, iframe")).size();
                 int inputs = webDriver.findElements(By.cssSelector("input")).size();
@@ -213,7 +159,7 @@ public class PolicyInquiryTest {
         }
 
         waitForDocumentReady();
-        waitQuietly(3000);
+        waitQuietly(2000);
         switchToLatestWindow();
 
         System.out.println("Login submit action completed.");
@@ -359,24 +305,24 @@ public class PolicyInquiryTest {
         System.out.println("===== POST LOGIN OK: START =====");
 
         waitForDocumentReady();
-        waitQuietly(5000);
+        waitQuietly(2000);
         switchToLatestWindow();
 
         takeScreenshotQuietly("03a-before-post-login-ok");
 
         if (acceptAlertIfPresent("post-login OK")) {
-            waitQuietly(3000);
+            waitQuietly(1500);
             takeScreenshotQuietly("03b-after-post-login-alert-ok");
             System.out.println("===== POST LOGIN OK: browser alert accepted =====");
             return;
         }
 
         try {
-            WebElement ok = findIngeniumOkButtonDeep(35);
+            WebElement ok = findIngeniumOkButtonDeep(12);
 
             if (ok != null) {
                 clickElementStrong(ok, "post-login Ingenium OK");
-                waitQuietly(5000);
+                waitQuietly(2000);
                 waitForDocumentReady();
                 switchToLatestWindow();
                 takeScreenshotQuietly("03b-after-post-login-ok-click");
@@ -390,7 +336,7 @@ public class PolicyInquiryTest {
         System.out.println("POST LOGIN OK: trying bottom-center coordinate fallback.");
 
         if (clickBottomCenterInDefaultOrFrames()) {
-            waitQuietly(5000);
+            waitQuietly(2000);
             waitForDocumentReady();
             switchToLatestWindow();
             takeScreenshotQuietly("03b-after-post-login-bottom-center-click");
@@ -410,71 +356,69 @@ public class PolicyInquiryTest {
     private WebElement findIngeniumOkButtonDeep(int timeoutSeconds) {
         WebDriverWait okWait = new WebDriverWait(driver, Duration.ofSeconds(timeoutSeconds));
 
-        return okWait.until(webDriver -> {
-            try {
-                webDriver.switchTo().defaultContent();
+        try {
+            return okWait.until(webDriver -> {
+                try {
+                    webDriver.switchTo().defaultContent();
 
-                By[] okLocators = new By[]{
-                        By.id("ok"),
-                        By.id("OK"),
-                        By.name("ok"),
-                        By.name("OK"),
+                    By[] okLocators = new By[]{
+                            By.id("ok"),
+                            By.id("OK"),
+                            By.name("ok"),
+                            By.name("OK"),
 
-                        By.xpath("//input[translate(normalize-space(@value),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='OK']"),
-                        By.xpath("//input[contains(translate(@value,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
+                            By.xpath("//input[translate(normalize-space(@value),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='OK']"),
+                            By.xpath("//button[translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='OK']"),
+                            By.xpath("//a[translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='OK']"),
 
-                        By.xpath("//button[translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='OK']"),
-                        By.xpath("//button[contains(translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
+                            By.xpath("//input[contains(translate(@value,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
+                            By.xpath("//input[contains(translate(@alt,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
+                            By.xpath("//input[contains(translate(@title,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
+                            By.xpath("//input[contains(translate(@src,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
 
-                        By.xpath("//a[translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='OK']"),
-                        By.xpath("//a[contains(translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
+                            By.xpath("//img[contains(translate(@alt,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
+                            By.xpath("//img[contains(translate(@title,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
+                            By.xpath("//img[contains(translate(@src,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
 
-                        By.xpath("//input[@type='image']"),
-                        By.xpath("//input[contains(translate(@alt,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
-                        By.xpath("//input[contains(translate(@title,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
-                        By.xpath("//input[contains(translate(@src,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
+                            By.xpath("//area[contains(translate(@alt,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
+                            By.xpath("//area[contains(translate(@title,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
+                            By.xpath("//area[contains(translate(@href,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
 
-                        By.xpath("//img[contains(translate(@alt,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
-                        By.xpath("//img[contains(translate(@title,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
-                        By.xpath("//img[contains(translate(@src,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
+                            By.xpath("//*[contains(translate(@onclick,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
+                            By.xpath("//*[contains(translate(@onclick,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'SUBMIT')]")
+                    };
 
-                        By.xpath("//area[contains(translate(@alt,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
-                        By.xpath("//area[contains(translate(@title,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
-                        By.xpath("//area[contains(translate(@href,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
+                    for (By locator : okLocators) {
+                        WebElement element = findClickableElementInCurrentContextOrFrames(locator, 0);
 
-                        By.xpath("//*[contains(translate(@onclick,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
-                        By.xpath("//*[contains(translate(@onclick,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'SUBMIT')]")
-                };
-
-                for (By locator : okLocators) {
-                    WebElement element = findClickableElementInCurrentContextOrFrames(locator, 0);
-
-                    if (element != null) {
-                        System.out.println("POST LOGIN OK: found using locator: " + locator);
-                        return element;
+                        if (element != null) {
+                            System.out.println("POST LOGIN OK: found using locator: " + locator);
+                            return element;
+                        }
                     }
-                }
 
-                return null;
-            } catch (Exception e) {
-                System.out.println("POST LOGIN OK: search retry due to: " + e.getMessage());
-                return null;
-            }
-        });
+                    return null;
+                } catch (Exception e) {
+                    return null;
+                }
+            });
+        } catch (TimeoutException e) {
+            return null;
+        }
     }
 
     private WebElement findClickableElementInCurrentContextOrFrames(By locator, int depth) {
-        if (depth > 12) {
+        if (depth > 10) {
             return null;
         }
 
         WebElement element = findClickableElementInCurrentContext(locator);
+
         if (element != null) {
             return element;
         }
 
         List<WebElement> frames = driver.findElements(By.cssSelector("frame, iframe"));
-        System.out.println("POST LOGIN OK: frame count at depth " + depth + " = " + frames.size());
 
         for (int i = 0; i < frames.size(); i++) {
             try {
@@ -483,7 +427,7 @@ public class PolicyInquiryTest {
                 WebElement frameElement = findClickableElementInCurrentContextOrFrames(locator, depth + 1);
 
                 if (frameElement != null) {
-                    System.out.println("POST LOGIN OK: element found in frame index " + i + " at depth " + depth);
+                    System.out.println("Element found in frame index " + i + " at depth " + depth);
                     return frameElement;
                 }
 
@@ -491,7 +435,6 @@ public class PolicyInquiryTest {
             } catch (NoSuchFrameException | StaleElementReferenceException ignored) {
                 driver.switchTo().defaultContent();
             } catch (Exception e) {
-                System.out.println("POST LOGIN OK: frame search issue at depth " + depth + ", frame " + i + ": " + e.getMessage());
                 driver.switchTo().defaultContent();
             }
         }
@@ -513,7 +456,7 @@ public class PolicyInquiryTest {
                 }
 
                 System.out.println(
-                        "POST LOGIN OK candidate: tag=[" + element.getTagName() + "]" +
+                        "Clickable candidate: tag=[" + element.getTagName() + "]" +
                                 ", text=[" + safeText(element) + "]" +
                                 ", type=[" + safeAttribute(element, "type") + "]" +
                                 ", name=[" + safeAttribute(element, "name") + "]" +
@@ -521,8 +464,7 @@ public class PolicyInquiryTest {
                                 ", value=[" + safeAttribute(element, "value") + "]" +
                                 ", alt=[" + safeAttribute(element, "alt") + "]" +
                                 ", title=[" + safeAttribute(element, "title") + "]" +
-                                ", src=[" + safeAttribute(element, "src") + "]" +
-                                ", onclick=[" + safeAttribute(element, "onclick") + "]"
+                                ", src=[" + safeAttribute(element, "src") + "]"
                 );
 
                 return element;
@@ -539,7 +481,7 @@ public class PolicyInquiryTest {
             driver.switchTo().defaultContent();
             return Boolean.TRUE.equals(clickBottomCenterRecursive(0));
         } catch (Exception e) {
-            System.out.println("POST LOGIN OK: bottom-center fallback failed: " + e.getMessage());
+            System.out.println("Bottom-center fallback failed: " + e.getMessage());
             return false;
         } finally {
             try {
@@ -551,7 +493,7 @@ public class PolicyInquiryTest {
     }
 
     private Boolean clickBottomCenterRecursive(int depth) {
-        if (depth > 12) {
+        if (depth > 10) {
             return false;
         }
 
@@ -576,11 +518,11 @@ public class PolicyInquiryTest {
             );
 
             if (Boolean.TRUE.equals(clicked)) {
-                System.out.println("POST LOGIN OK: clicked bottom-center element at frame depth " + depth);
+                System.out.println("Clicked bottom-center element at frame depth " + depth);
                 return true;
             }
         } catch (Exception e) {
-            System.out.println("POST LOGIN OK: bottom-center click failed at depth " + depth + ": " + e.getMessage());
+            System.out.println("Bottom-center click failed at depth " + depth + ": " + e.getMessage());
         }
 
         List<WebElement> frames = driver.findElements(By.cssSelector("frame, iframe"));
@@ -597,7 +539,6 @@ public class PolicyInquiryTest {
 
                 driver.switchTo().parentFrame();
             } catch (Exception e) {
-                System.out.println("POST LOGIN OK: bottom-center frame issue depth " + depth + ", frame " + i + ": " + e.getMessage());
                 driver.switchTo().defaultContent();
             }
         }
@@ -643,54 +584,374 @@ public class PolicyInquiryTest {
     }
 
     private void enterPolicyIdAndSubmit() throws Exception {
+        System.out.println("===== FAST POLICY ID ENTRY START =====");
         System.out.println("Entering policy id: " + policyId);
 
-        typeFirstAvailable("policy id", new By[]{
-                By.name("policyId"),
-                By.id("policyId"),
-                By.name("policyNumber"),
-                By.id("policyNumber"),
-                By.name("policy"),
-                By.id("policy"),
-                By.name("POL_ID"),
-                By.id("POL_ID"),
-                By.name("polId"),
-                By.id("polId"),
-                By.name("Policy"),
-                By.id("Policy"),
-                By.cssSelector("input[name*='policy' i]"),
-                By.cssSelector("input[id*='policy' i]"),
-                By.cssSelector("input[name*='pol' i]"),
-                By.cssSelector("input[id*='pol' i]"),
-                By.cssSelector("input[type='text']")
-        }, policyId);
+        waitForDocumentReady();
+        waitQuietly(1000);
+        switchToLatestWindow();
+
+        WebElement policyInput = findPolicyIdInputFast(12);
+
+        if (policyInput == null) {
+            takeScreenshotQuietly("policy-id-input-not-found");
+            printPageDiagnosticsDeep("policy id input not found");
+            throw new RuntimeException("Policy ID input was not found on Policy Inquiry - All Details screen.");
+        }
+
+        try {
+            policyInput.click();
+        } catch (Exception ignored) {
+            // Continue with typing
+        }
+
+        try {
+            policyInput.clear();
+            policyInput.sendKeys(policyId);
+            System.out.println("Policy ID entered using Selenium sendKeys.");
+        } catch (Exception e) {
+            System.out.println("Selenium typing failed. Trying JavaScript typing. Error: " + e.getMessage());
+
+            ((JavascriptExecutor) driver).executeScript(
+                    "arguments[0].focus();" +
+                            "arguments[0].value = arguments[1];" +
+                            "arguments[0].dispatchEvent(new Event('input', {bubbles:true}));" +
+                            "arguments[0].dispatchEvent(new Event('change', {bubbles:true}));",
+                    policyInput,
+                    policyId
+            );
+
+            System.out.println("Policy ID entered using JavaScript.");
+        }
 
         takeScreenshot("06b-policy-id-entered");
 
-        clickOkIfPresent("before policy submit");
+        boolean okClicked = clickPolicyInquiryFooterOkFast();
 
-        if (!waitUntilTextAppearsInDefaultOrFrames(policyId, 5)) {
-            clickFirstAvailable("OK / policy submit", new By[]{
-                    By.id("ok"),
-                    By.name("ok"),
-                    By.id("OK"),
-                    By.name("OK"),
-                    By.id("submit"),
-                    By.name("submit"),
-                    By.cssSelector("button[type='submit']"),
-                    By.cssSelector("input[type='submit']"),
-                    By.cssSelector("input[type='button']"),
-                    By.cssSelector("input[type='image']"),
-                    By.xpath("//button[translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='OK']"),
-                    By.xpath("//input[translate(@value,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='OK']"),
-                    By.xpath("//button[contains(translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
-                    By.xpath("//input[contains(translate(@value,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
-                    By.xpath("//button[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'submit')]"),
-                    By.xpath("//input[contains(translate(@value,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'submit')]"),
-                    By.xpath("//button[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'search')]"),
-                    By.xpath("//input[contains(translate(@value,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'search')]")
-            });
+        if (!okClicked) {
+            takeScreenshotQuietly("policy-footer-ok-not-clicked");
+            printPageDiagnosticsDeep("policy footer OK not clicked");
+            throw new RuntimeException("Unable to click bottom footer OK after entering Policy ID.");
         }
+
+        waitForDocumentReady();
+        waitQuietly(3000);
+        takeScreenshot("07-policy-id-submitted");
+
+        System.out.println("===== FAST POLICY ID ENTRY COMPLETE =====");
+    }
+
+    private WebElement findPolicyIdInputFast(int timeoutSeconds) {
+        WebDriverWait fastWait = new WebDriverWait(driver, Duration.ofSeconds(timeoutSeconds));
+
+        try {
+            return fastWait.until(webDriver -> {
+                try {
+                    webDriver.switchTo().defaultContent();
+                    return findPolicyIdInputInCurrentContextOrFrames(0);
+                } catch (Exception e) {
+                    return null;
+                }
+            });
+        } catch (TimeoutException e) {
+            return null;
+        }
+    }
+
+    private WebElement findPolicyIdInputInCurrentContextOrFrames(int depth) {
+        if (depth > 10) {
+            return null;
+        }
+
+        WebElement found = findPolicyIdInputInCurrentContext();
+
+        if (found != null) {
+            return found;
+        }
+
+        List<WebElement> frames = driver.findElements(By.cssSelector("frame, iframe"));
+
+        for (int i = 0; i < frames.size(); i++) {
+            try {
+                driver.switchTo().frame(i);
+
+                WebElement frameFound = findPolicyIdInputInCurrentContextOrFrames(depth + 1);
+
+                if (frameFound != null) {
+                    System.out.println("Policy ID input found in frame depth " + depth + ", frame index " + i);
+                    return frameFound;
+                }
+
+                driver.switchTo().parentFrame();
+            } catch (Exception e) {
+                driver.switchTo().defaultContent();
+            }
+        }
+
+        if (depth == 0) {
+            driver.switchTo().defaultContent();
+        }
+
+        return null;
+    }
+
+    private WebElement findPolicyIdInputInCurrentContext() {
+        List<WebElement> inputs = driver.findElements(By.cssSelector("input"));
+
+        WebElement firstVisibleTextInput = null;
+
+        for (WebElement input : inputs) {
+            try {
+                if (!input.isDisplayed() || !input.isEnabled()) {
+                    continue;
+                }
+
+                String type = safeAttribute(input, "type").toLowerCase();
+                String name = safeAttribute(input, "name").toLowerCase();
+                String id = safeAttribute(input, "id").toLowerCase();
+                String title = safeAttribute(input, "title").toLowerCase();
+
+                if ("hidden".equals(type) || "button".equals(type) || "submit".equals(type) || "image".equals(type)) {
+                    continue;
+                }
+
+                boolean looksLikeTextInput =
+                        type.isEmpty()
+                                || "text".equals(type)
+                                || "search".equals(type)
+                                || "tel".equals(type)
+                                || "number".equals(type);
+
+                if (!looksLikeTextInput) {
+                    continue;
+                }
+
+                if (name.contains("suffix") || id.contains("suffix") || title.contains("suffix")) {
+                    continue;
+                }
+
+                if (name.contains("policy")
+                        || id.contains("policy")
+                        || name.contains("pol")
+                        || id.contains("pol")
+                        || title.contains("policy")
+                        || title.contains("pol")) {
+                    System.out.println("Found Policy ID input using name/id/title.");
+                    return input;
+                }
+
+                if (firstVisibleTextInput == null) {
+                    firstVisibleTextInput = input;
+                }
+            } catch (StaleElementReferenceException ignored) {
+                // Try next input
+            }
+        }
+
+        if (firstVisibleTextInput != null) {
+            System.out.println("Using first visible text input as Policy ID input.");
+            return firstVisibleTextInput;
+        }
+
+        return null;
+    }
+
+    private boolean clickPolicyInquiryFooterOkFast() {
+        System.out.println("===== FAST FOOTER OK CLICK START =====");
+
+        if (acceptAlertIfPresent("policy inquiry footer OK")) {
+            return true;
+        }
+
+        try {
+            driver.switchTo().defaultContent();
+
+            WebElement ok = findFooterOkButtonInCurrentContextOrFrames(0);
+
+            if (ok != null) {
+                clickElementStrong(ok, "Policy Inquiry footer OK");
+                waitQuietly(1500);
+                System.out.println("Footer OK clicked using DOM/frame search.");
+                return true;
+            }
+        } catch (Exception e) {
+            System.out.println("Footer OK DOM search failed: " + e.getMessage());
+        }
+
+        System.out.println("Trying footer OK coordinate fallback.");
+
+        boolean clickedByCoordinate = clickFooterOkByCoordinateInFrames();
+
+        if (clickedByCoordinate) {
+            waitQuietly(1500);
+            System.out.println("Footer OK clicked using coordinate fallback.");
+            return true;
+        }
+
+        return false;
+    }
+
+    private WebElement findFooterOkButtonInCurrentContextOrFrames(int depth) {
+        if (depth > 10) {
+            return null;
+        }
+
+        WebElement current = findFooterOkButtonInCurrentContext();
+
+        if (current != null) {
+            return current;
+        }
+
+        List<WebElement> frames = driver.findElements(By.cssSelector("frame, iframe"));
+
+        for (int i = 0; i < frames.size(); i++) {
+            try {
+                driver.switchTo().frame(i);
+
+                WebElement found = findFooterOkButtonInCurrentContextOrFrames(depth + 1);
+
+                if (found != null) {
+                    System.out.println("Footer OK found in frame depth " + depth + ", frame index " + i);
+                    return found;
+                }
+
+                driver.switchTo().parentFrame();
+            } catch (Exception e) {
+                driver.switchTo().defaultContent();
+            }
+        }
+
+        if (depth == 0) {
+            driver.switchTo().defaultContent();
+        }
+
+        return null;
+    }
+
+    private WebElement findFooterOkButtonInCurrentContext() {
+        By[] okLocators = new By[]{
+                By.id("ok"),
+                By.name("ok"),
+                By.id("OK"),
+                By.name("OK"),
+
+                By.xpath("//input[translate(normalize-space(@value),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='OK']"),
+                By.xpath("//button[translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='OK']"),
+                By.xpath("//a[translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='OK']"),
+
+                By.xpath("//input[contains(translate(@value,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
+                By.xpath("//input[contains(translate(@alt,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
+                By.xpath("//input[contains(translate(@title,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
+                By.xpath("//input[contains(translate(@src,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
+
+                By.xpath("//img[contains(translate(@alt,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
+                By.xpath("//img[contains(translate(@title,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
+                By.xpath("//img[contains(translate(@src,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
+
+                By.xpath("//area[contains(translate(@alt,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
+                By.xpath("//area[contains(translate(@title,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
+                By.xpath("//area[contains(translate(@href,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]")
+        };
+
+        for (By locator : okLocators) {
+            List<WebElement> elements = driver.findElements(locator);
+
+            for (WebElement element : elements) {
+                try {
+                    if (element.isDisplayed() && element.isEnabled()) {
+                        System.out.println(
+                                "Footer OK candidate found: tag=[" + element.getTagName() + "]" +
+                                        ", type=[" + safeAttribute(element, "type") + "]" +
+                                        ", name=[" + safeAttribute(element, "name") + "]" +
+                                        ", id=[" + safeAttribute(element, "id") + "]" +
+                                        ", value=[" + safeAttribute(element, "value") + "]" +
+                                        ", alt=[" + safeAttribute(element, "alt") + "]" +
+                                        ", title=[" + safeAttribute(element, "title") + "]"
+                        );
+                        return element;
+                    }
+                } catch (StaleElementReferenceException ignored) {
+                    // Try next
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private boolean clickFooterOkByCoordinateInFrames() {
+        try {
+            driver.switchTo().defaultContent();
+            return Boolean.TRUE.equals(clickFooterOkByCoordinateRecursive(0));
+        } catch (Exception e) {
+            System.out.println("Footer OK coordinate fallback failed: " + e.getMessage());
+            return false;
+        } finally {
+            try {
+                driver.switchTo().defaultContent();
+            } catch (Exception ignored) {
+                // Ignore
+            }
+        }
+    }
+
+    private Boolean clickFooterOkByCoordinateRecursive(int depth) {
+        if (depth > 10) {
+            return false;
+        }
+
+        try {
+            Object result = ((JavascriptExecutor) driver).executeScript(
+                    "var points = [" +
+                            "  [Math.floor(window.innerWidth * 0.40), Math.max(0, window.innerHeight - 18)]," +
+                            "  [Math.floor(window.innerWidth * 0.39), Math.max(0, window.innerHeight - 18)]," +
+                            "  [Math.floor(window.innerWidth * 0.41), Math.max(0, window.innerHeight - 18)]," +
+                            "  [Math.floor(window.innerWidth * 0.40), Math.max(0, window.innerHeight - 25)]," +
+                            "  [Math.floor(window.innerWidth * 0.40), Math.max(0, window.innerHeight - 35)]" +
+                            "];" +
+                            "for (var i = 0; i < points.length; i++) {" +
+                            "  var x = points[i][0];" +
+                            "  var y = points[i][1];" +
+                            "  var el = document.elementFromPoint(x, y);" +
+                            "  if (el) {" +
+                            "    el.click();" +
+                            "    return true;" +
+                            "  }" +
+                            "}" +
+                            "return false;"
+            );
+
+            if (Boolean.TRUE.equals(result)) {
+                System.out.println("Footer OK clicked by coordinate at depth " + depth);
+                return true;
+            }
+        } catch (Exception e) {
+            System.out.println("Footer OK coordinate click failed at depth " + depth + ": " + e.getMessage());
+        }
+
+        List<WebElement> frames = driver.findElements(By.cssSelector("frame, iframe"));
+
+        for (int i = 0; i < frames.size(); i++) {
+            try {
+                driver.switchTo().frame(i);
+
+                Boolean clicked = clickFooterOkByCoordinateRecursive(depth + 1);
+
+                if (Boolean.TRUE.equals(clicked)) {
+                    return true;
+                }
+
+                driver.switchTo().parentFrame();
+            } catch (Exception e) {
+                driver.switchTo().defaultContent();
+            }
+        }
+
+        if (depth == 0) {
+            driver.switchTo().defaultContent();
+        }
+
+        return false;
     }
 
     private void clickOkIfPresent(String label) {
@@ -725,7 +986,7 @@ public class PolicyInquiryTest {
 
     private boolean acceptAlertIfPresent(String label) {
         try {
-            WebDriverWait shortWait = new WebDriverWait(driver, Duration.ofSeconds(5));
+            WebDriverWait shortWait = new WebDriverWait(driver, Duration.ofSeconds(3));
             Alert alert = shortWait.until(ExpectedConditions.alertIsPresent());
 
             System.out.println("Alert found for " + label + ". Text: " + alert.getText());
@@ -740,7 +1001,7 @@ public class PolicyInquiryTest {
     }
 
     private void typeFirstAvailable(String fieldName, By[] locators, String value) {
-        WebElement element = findFirstAvailableElement(fieldName, locators, true, 45);
+        WebElement element = findFirstAvailableElement(fieldName, locators, true, 30);
 
         clearAndType(element, value);
 
@@ -749,7 +1010,7 @@ public class PolicyInquiryTest {
 
     private void typeIfAvailable(String fieldName, By[] locators, String value) {
         try {
-            WebElement element = findFirstAvailableElement(fieldName, locators, true, 8);
+            WebElement element = findFirstAvailableElement(fieldName, locators, true, 5);
 
             clearAndType(element, value);
 
@@ -760,19 +1021,19 @@ public class PolicyInquiryTest {
     }
 
     private void clickFirstAvailable(String elementName, By[] locators) {
-        WebElement element = findFirstAvailableElement(elementName, locators, false, 45);
+        WebElement element = findFirstAvailableElement(elementName, locators, false, 30);
 
         clickElementStrong(element, elementName);
 
         waitForDocumentReady();
-        waitQuietly(2000);
+        waitQuietly(1500);
         switchToLatestWindow();
 
         System.out.println("Clicked element: " + elementName);
     }
 
     private void clickFirstAvailableShort(String elementName, By[] locators) {
-        WebElement element = findFirstAvailableElement(elementName, locators, false, 8);
+        WebElement element = findFirstAvailableElement(elementName, locators, false, 5);
 
         clickElementStrong(element, elementName);
 
@@ -789,7 +1050,7 @@ public class PolicyInquiryTest {
                     "arguments[0].scrollIntoView({block:'center', inline:'center'});",
                     element
             );
-            waitQuietly(500);
+            waitQuietly(300);
         } catch (Exception ignored) {
             // Continue
         }
@@ -903,8 +1164,6 @@ public class PolicyInquiryTest {
 
         List<WebElement> frames = driver.findElements(By.cssSelector("frame, iframe"));
 
-        System.out.println("Frame count at depth " + depth + ": " + frames.size());
-
         for (int i = 0; i < frames.size(); i++) {
             try {
                 driver.switchTo().frame(i);
@@ -1007,7 +1266,6 @@ public class PolicyInquiryTest {
         }
 
         List<WebElement> frames = driver.findElements(By.cssSelector("frame, iframe"));
-        System.out.println("Deep search frame count at depth " + depth + ": " + frames.size());
 
         for (int i = 0; i < frames.size(); i++) {
             try {
@@ -1414,3 +1672,51 @@ public class PolicyInquiryTest {
         }
     }
 }
+``
+import org.openqa.selenium.Alert;
+import org.openqa.selenium.By;
+import org.openqa.selenium.JavascriptExecutor;
+import org.openqa.selenium.Keys;
+import org.openqa.selenium.NoAlertPresentException;
+import org.openqa.selenium.NoSuchFrameException;
+import org.openqa.selenium.OutputType;
+import org.openqa.selenium.StaleElementReferenceException;
+import org.openqa.selenium.TakesScreenshot;
+import org.openqa.selenium.TimeoutException;
+import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.WebDriverException;
+import org.openqa.selenium.WebElement;
+import org.openqa.selenium.chrome.ChromeDriver;
+import org.openqa.selenium.chrome.ChromeOptions;
+import org.openqa.selenium.support.ui.ExpectedCondition;
+import org.openqa.selenium.support.ui.ExpectedConditions;
+import org.openqa.selenium.support.ui.Select;
+import org.openqa.selenium.support.ui.WebDriverWait;
+import org.testng.Assert;
+import org.testng.annotations.AfterMethod;
+import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Test;
+
+import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Duration;
+import java.util.List;
+
+public class PolicyInquiryTest {
+
+    private WebDriver driver;
+    private WebDriverWait wait;
+
+    private String appUrl;
+    private String company;
+    private String username;
+    private String password;
+    private String policyId;
+    private String screenshotDir;
+
+    @BeforeMethod
+    public void setUp() {
+        appUrl = getProperty("app.url", "APP_URL");
+        company = getProperty("company", "COMPANY", "Manulife");
+        username = getProperty("app.username", "APP_USERNAME", "gocc");
