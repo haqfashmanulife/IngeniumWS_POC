@@ -1,6 +1,54 @@
 package com.manulife.ingenium.tests;
 
-import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium");import io.github.bonigarcia.wdm.WebDriverManager;
+import io.github.bonigarcia.wdm.WebDriverManager;
+import org.openqa.selenium.Alert;
+import org.openqa.selenium.By;
+import org.openqa.selenium.JavascriptExecutor;
+import org.openqa.selenium.Keys;
+import org.openqa.selenium.NoAlertPresentException;
+import org.openqa.selenium.NoSuchFrameException;
+import org.openqa.selenium.OutputType;
+import org.openqa.selenium.StaleElementReferenceException;
+import org.openqa.selenium.TakesScreenshot;
+import org.openqa.selenium.TimeoutException;
+import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.WebDriverException;
+import org.openqa.selenium.WebElement;
+import org.openqa.selenium.chrome.ChromeDriver;
+import org.openqa.selenium.chrome.ChromeOptions;
+import org.openqa.selenium.support.ui.ExpectedCondition;
+import org.openqa.selenium.support.ui.ExpectedConditions;
+import org.openqa.selenium.support.ui.Select;
+import org.openqa.selenium.support.ui.WebDriverWait;
+import org.testng.Assert;
+import org.testng.annotations.AfterMethod;
+import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Test;
+
+import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Duration;
+import java.util.List;
+
+public class PolicyInquiryTest {
+
+    private WebDriver driver;
+    private WebDriverWait wait;
+
+    private String appUrl;
+    private String company;
+    private String username;
+    private String password;
+    private String policyId;
+    private String screenshotDir;
+
+    @BeforeMethod
+    public void setUp() {
+        appUrl = getProperty("app.url", "APP_URL");
+        company = getProperty("company", "COMPANY", "Manulife");
+        username = getProperty("app.username", "APP_USERNAME", "gocc");
+        password = getProperty("app.password", "APP_PASSWORD", "ingenium");
         policyId = getProperty("policy.id", "POLICY_ID");
         screenshotDir = getProperty("screenshot.dir", "SCREENSHOT_DIR", "screenshots");
 
@@ -24,29 +72,25 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
         options.addArguments("--remote-allow-origins=*");
 
         driver = new ChromeDriver(options);
-        wait = new WebDriverWait(driver, Duration.ofSeconds(45));
+        wait = new WebDriverWait(driver, Duration.ofSeconds(30));
     }
 
     @Test
     public void policyInquiryTest() throws Exception {
         System.out.println("Opening application URL: " + appUrl);
-
         driver.get(appUrl);
 
         waitForDocumentReady();
         takeScreenshot("01-app-opened");
         printPageDiagnostics("after app open");
-        printAllLinks("after app open");
 
         clickEnglishSignOnIfNeeded();
 
         waitForDocumentReady();
-        waitQuietly(3000);
+        waitQuietly(2500);
         switchToLatestWindow();
         takeScreenshot("02-english-sign-on-opened");
-        printPageDiagnostics("after english sign on");
         printPageDiagnosticsDeep("after english sign on");
-        printAllLinks("after english sign on");
 
         enterLoginDetailsAndSubmit();
 
@@ -54,41 +98,34 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
         waitQuietly(2000);
         takeScreenshot("03-login-submitted");
 
-        clickIngeniumBottomOkAfterLogin();
+        clickPostLoginOkFast();
 
-        waitQuietly(3000);
+        waitQuietly(2500);
         waitForDocumentReady();
         takeScreenshot("04-after-login-ok-and-wait");
-        printPageDiagnostics("after login ok and wait");
         printPageDiagnosticsDeep("after login ok and wait");
-        printAllLinks("after login ok and wait");
 
         clickPolicyInquiry();
 
         waitForDocumentReady();
-        waitQuietly(2000);
+        waitQuietly(1500);
         takeScreenshot("05-policy-inquiry-clicked");
-        printPageDiagnostics("after policy inquiry click");
-        printAllLinks("after policy inquiry click");
 
         clickPolicyInquiryAllDetails();
 
         waitForDocumentReady();
-        waitQuietly(2000);
+        waitQuietly(1500);
         takeScreenshot("06-policy-inquiry-all-details-opened");
-        printPageDiagnostics("after policy inquiry all details");
-        printAllLinks("after policy inquiry all details");
+        printPageDiagnosticsDeep("after policy inquiry all details");
 
         enterPolicyIdAndSubmit();
 
         waitForDocumentReady();
-        waitQuietly(3000);
-        printPageDiagnostics("after policy id submitted");
+        waitQuietly(2500);
+        takeScreenshot("08-policy-result");
+        printPageDiagnosticsDeep("after policy result");
 
         boolean policyVisible = waitUntilTextAppearsInDefaultOrFrames(policyId, 15);
-
-        takeScreenshot("08-policy-result");
-
         Assert.assertTrue(policyVisible, "Policy ID was not visible after inquiry: " + policyId);
     }
 
@@ -99,7 +136,6 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
         }
 
         System.out.println("Trying to click English Sign On.");
-
         clickFirstAvailable("English Sign On", new By[]{
                 By.linkText("English Sign On"),
                 By.partialLinkText("English"),
@@ -109,14 +145,14 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
                 By.xpath("//a[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'sign on')]"),
                 By.xpath("//button[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'english sign on')]"),
                 By.xpath("//input[contains(translate(@value,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'english sign on')]")
-        });
+        }, 20);
 
         waitForDocumentReady();
-        waitQuietly(3000);
+        waitQuietly(2500);
         switchToLatestWindow();
 
         try {
-            new WebDriverWait(driver, Duration.ofSeconds(15)).until(webDriver -> {
+            new WebDriverWait(driver, Duration.ofSeconds(12)).until(webDriver -> {
                 webDriver.switchTo().defaultContent();
                 int frames = webDriver.findElements(By.cssSelector("frame, iframe")).size();
                 int inputs = webDriver.findElements(By.cssSelector("input")).size();
@@ -125,8 +161,6 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
         } catch (Exception e) {
             System.out.println("Login page readiness wait did not detect frames/inputs: " + e.getMessage());
         }
-
-        printPageDiagnosticsDeep("after English Sign On readiness wait");
     }
 
     private boolean loginFieldsExist() {
@@ -161,57 +195,32 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
         waitForDocumentReady();
         waitQuietly(2000);
         switchToLatestWindow();
-
         System.out.println("Login submit action completed.");
     }
 
     private boolean tryStandardLoginFields() {
         try {
             typeFirstAvailable("name", new By[]{
-                    By.name("name"),
-                    By.id("name"),
-                    By.name("Name"),
-                    By.id("Name"),
-                    By.name("NAME"),
-                    By.id("NAME"),
-                    By.name("username"),
-                    By.id("username"),
-                    By.name("user"),
-                    By.id("user"),
-                    By.name("USER"),
-                    By.id("USER"),
-                    By.cssSelector("input[name*='name' i]"),
-                    By.cssSelector("input[id*='name' i]"),
-                    By.cssSelector("input[name*='user' i]"),
-                    By.cssSelector("input[id*='user' i]"),
+                    By.name("name"), By.id("name"), By.name("Name"), By.id("Name"),
+                    By.name("NAME"), By.id("NAME"), By.name("username"), By.id("username"),
+                    By.name("user"), By.id("user"), By.name("USER"), By.id("USER"),
+                    By.cssSelector("input[name*='name' i]"), By.cssSelector("input[id*='name' i]"),
+                    By.cssSelector("input[name*='user' i]"), By.cssSelector("input[id*='user' i]"),
                     By.cssSelector("input[type='text']")
-            }, username);
+            }, username, 25);
 
             typeFirstAvailable("password", new By[]{
-                    By.name("password"),
-                    By.id("password"),
-                    By.name("Password"),
-                    By.id("Password"),
-                    By.name("PASSWORD"),
-                    By.id("PASSWORD"),
-                    By.cssSelector("input[type='password']"),
-                    By.cssSelector("input[name*='password' i]"),
-                    By.cssSelector("input[id*='password' i]")
-            }, password);
+                    By.name("password"), By.id("password"), By.name("Password"), By.id("Password"),
+                    By.name("PASSWORD"), By.id("PASSWORD"), By.cssSelector("input[type='password']"),
+                    By.cssSelector("input[name*='password' i]"), By.cssSelector("input[id*='password' i]")
+            }, password, 15);
 
             typeIfAvailable("company", new By[]{
-                    By.name("company"),
-                    By.id("company"),
-                    By.name("Company"),
-                    By.id("Company"),
-                    By.name("COMPANY"),
-                    By.id("COMPANY"),
-                    By.cssSelector("input[name*='company' i]"),
-                    By.cssSelector("input[id*='company' i]"),
-                    By.cssSelector("select[name*='company' i]"),
-                    By.cssSelector("select[id*='company' i]"),
-                    By.cssSelector("select")
-            }, company);
+                    By.name("company"), By.id("company"), By.name("Company"), By.id("Company"),
+                    By.name("COMPANY"), By.id("COMPANY"), By.cssSelector("input[name*='company' i]"),
+                    By.cssSelector("input[id*='company' i]"), By.cssSelector("select[name*='company' i]"),
+                    By.cssSelector("select[id*='company' i]"), By.cssSelector("select")
+            }, company, 5);
 
             return true;
         } catch (Exception e) {
@@ -301,28 +310,26 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
         System.out.println("Pressed ENTER on password field.");
     }
 
-    private void clickIngeniumBottomOkAfterLogin() {
+    private void clickPostLoginOkFast() {
         System.out.println("===== POST LOGIN OK: START =====");
 
         waitForDocumentReady();
         waitQuietly(2000);
         switchToLatestWindow();
-
         takeScreenshotQuietly("03a-before-post-login-ok");
 
         if (acceptAlertIfPresent("post-login OK")) {
-            waitQuietly(1500);
+            waitQuietly(1000);
             takeScreenshotQuietly("03b-after-post-login-alert-ok");
             System.out.println("===== POST LOGIN OK: browser alert accepted =====");
             return;
         }
 
         try {
-            WebElement ok = findIngeniumOkButtonDeep(12);
-
+            WebElement ok = findOkButtonDeep(10);
             if (ok != null) {
                 clickElementStrong(ok, "post-login Ingenium OK");
-                waitQuietly(2000);
+                waitQuietly(1500);
                 waitForDocumentReady();
                 switchToLatestWindow();
                 takeScreenshotQuietly("03b-after-post-login-ok-click");
@@ -334,9 +341,8 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
         }
 
         System.out.println("POST LOGIN OK: trying bottom-center coordinate fallback.");
-
         if (clickBottomCenterInDefaultOrFrames()) {
-            waitQuietly(2000);
+            waitQuietly(1500);
             waitForDocumentReady();
             switchToLatestWindow();
             takeScreenshotQuietly("03b-after-post-login-bottom-center-click");
@@ -345,58 +351,44 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
         }
 
         takeScreenshotQuietly("03x-post-login-ok-failed");
-        printPageDiagnostics("post-login OK failed");
         printPageDiagnosticsDeep("post-login OK failed");
-        printAllInputs("post-login OK failed");
-        printAllLinks("post-login OK failed");
-
         throw new RuntimeException("Unable to click post-login Ingenium OK button.");
     }
 
-    private WebElement findIngeniumOkButtonDeep(int timeoutSeconds) {
+    private WebElement findOkButtonDeep(int timeoutSeconds) {
         WebDriverWait okWait = new WebDriverWait(driver, Duration.ofSeconds(timeoutSeconds));
 
         try {
             return okWait.until(webDriver -> {
                 try {
                     webDriver.switchTo().defaultContent();
-
                     By[] okLocators = new By[]{
-                            By.id("ok"),
-                            By.id("OK"),
-                            By.name("ok"),
-                            By.name("OK"),
-
+                            By.id("ok"), By.id("OK"), By.name("ok"), By.name("OK"),
                             By.xpath("//input[translate(normalize-space(@value),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='OK']"),
                             By.xpath("//button[translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='OK']"),
                             By.xpath("//a[translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='OK']"),
-
                             By.xpath("//input[contains(translate(@value,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
                             By.xpath("//input[contains(translate(@alt,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
                             By.xpath("//input[contains(translate(@title,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
                             By.xpath("//input[contains(translate(@src,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
-
+                            By.xpath("//input[@type='image']"),
                             By.xpath("//img[contains(translate(@alt,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
                             By.xpath("//img[contains(translate(@title,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
                             By.xpath("//img[contains(translate(@src,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
-
                             By.xpath("//area[contains(translate(@alt,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
                             By.xpath("//area[contains(translate(@title,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
                             By.xpath("//area[contains(translate(@href,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
-
                             By.xpath("//*[contains(translate(@onclick,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
                             By.xpath("//*[contains(translate(@onclick,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'SUBMIT')]")
                     };
 
                     for (By locator : okLocators) {
                         WebElement element = findClickableElementInCurrentContextOrFrames(locator, 0);
-
                         if (element != null) {
-                            System.out.println("POST LOGIN OK: found using locator: " + locator);
+                            System.out.println("OK found using locator: " + locator);
                             return element;
                         }
                     }
-
                     return null;
                 } catch (Exception e) {
                     return null;
@@ -407,152 +399,8 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
         }
     }
 
-    private WebElement findClickableElementInCurrentContextOrFrames(By locator, int depth) {
-        if (depth > 10) {
-            return null;
-        }
-
-        WebElement element = findClickableElementInCurrentContext(locator);
-
-        if (element != null) {
-            return element;
-        }
-
-        List<WebElement> frames = driver.findElements(By.cssSelector("frame, iframe"));
-
-        for (int i = 0; i < frames.size(); i++) {
-            try {
-                driver.switchTo().frame(i);
-
-                WebElement frameElement = findClickableElementInCurrentContextOrFrames(locator, depth + 1);
-
-                if (frameElement != null) {
-                    System.out.println("Element found in frame index " + i + " at depth " + depth);
-                    return frameElement;
-                }
-
-                driver.switchTo().parentFrame();
-            } catch (NoSuchFrameException | StaleElementReferenceException ignored) {
-                driver.switchTo().defaultContent();
-            } catch (Exception e) {
-                driver.switchTo().defaultContent();
-            }
-        }
-
-        if (depth == 0) {
-            driver.switchTo().defaultContent();
-        }
-
-        return null;
-    }
-
-    private WebElement findClickableElementInCurrentContext(By locator) {
-        List<WebElement> elements = driver.findElements(locator);
-
-        for (WebElement element : elements) {
-            try {
-                if (!element.isDisplayed() || !element.isEnabled()) {
-                    continue;
-                }
-
-                System.out.println(
-                        "Clickable candidate: tag=[" + element.getTagName() + "]" +
-                                ", text=[" + safeText(element) + "]" +
-                                ", type=[" + safeAttribute(element, "type") + "]" +
-                                ", name=[" + safeAttribute(element, "name") + "]" +
-                                ", id=[" + safeAttribute(element, "id") + "]" +
-                                ", value=[" + safeAttribute(element, "value") + "]" +
-                                ", alt=[" + safeAttribute(element, "alt") + "]" +
-                                ", title=[" + safeAttribute(element, "title") + "]" +
-                                ", src=[" + safeAttribute(element, "src") + "]"
-                );
-
-                return element;
-            } catch (StaleElementReferenceException ignored) {
-                // Try next candidate
-            }
-        }
-
-        return null;
-    }
-
-    private boolean clickBottomCenterInDefaultOrFrames() {
-        try {
-            driver.switchTo().defaultContent();
-            return Boolean.TRUE.equals(clickBottomCenterRecursive(0));
-        } catch (Exception e) {
-            System.out.println("Bottom-center fallback failed: " + e.getMessage());
-            return false;
-        } finally {
-            try {
-                driver.switchTo().defaultContent();
-            } catch (Exception ignored) {
-                // Ignore
-            }
-        }
-    }
-
-    private Boolean clickBottomCenterRecursive(int depth) {
-        if (depth > 10) {
-            return false;
-        }
-
-        try {
-            Object clicked = ((JavascriptExecutor) driver).executeScript(
-                    "var points = [" +
-                            "  [Math.floor(window.innerWidth/2), Math.max(0, window.innerHeight-15)]," +
-                            "  [Math.floor(window.innerWidth/2), Math.max(0, window.innerHeight-25)]," +
-                            "  [Math.floor(window.innerWidth/2), Math.max(0, window.innerHeight-35)]," +
-                            "  [Math.floor(window.innerWidth/2), Math.max(0, window.innerHeight-45)]" +
-                            "];" +
-                            "for (var i = 0; i < points.length; i++) {" +
-                            "  var x = points[i][0];" +
-                            "  var y = points[i][1];" +
-                            "  var el = document.elementFromPoint(x, y);" +
-                            "  if (el) {" +
-                            "    el.click();" +
-                            "    return true;" +
-                            "  }" +
-                            "}" +
-                            "return false;"
-            );
-
-            if (Boolean.TRUE.equals(clicked)) {
-                System.out.println("Clicked bottom-center element at frame depth " + depth);
-                return true;
-            }
-        } catch (Exception e) {
-            System.out.println("Bottom-center click failed at depth " + depth + ": " + e.getMessage());
-        }
-
-        List<WebElement> frames = driver.findElements(By.cssSelector("frame, iframe"));
-
-        for (int i = 0; i < frames.size(); i++) {
-            try {
-                driver.switchTo().frame(i);
-
-                Boolean clicked = clickBottomCenterRecursive(depth + 1);
-
-                if (Boolean.TRUE.equals(clicked)) {
-                    return true;
-                }
-
-                driver.switchTo().parentFrame();
-            } catch (Exception e) {
-                driver.switchTo().defaultContent();
-            }
-        }
-
-        if (depth == 0) {
-            driver.switchTo().defaultContent();
-        }
-
-        return false;
-    }
-
     private void clickPolicyInquiry() {
         System.out.println("Clicking left side Policy Inquiry menu.");
-
         clickFirstAvailable("Policy Inquiry", new By[]{
                 By.linkText("Policy Inquiry"),
                 By.partialLinkText("Policy Inquiry"),
@@ -563,12 +411,11 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
                 By.xpath("//td[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'policy inquiry')]"),
                 By.xpath("//button[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'policy inquiry')]"),
                 By.xpath("//input[contains(translate(@value,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'policy inquiry')]")
-        });
+        }, 25);
     }
 
     private void clickPolicyInquiryAllDetails() {
         System.out.println("Clicking Policy Inquiry - All Details.");
-
         clickFirstAvailable("Policy Inquiry All Details", new By[]{
                 By.linkText("Policy Inquiry - All Details"),
                 By.linkText("Policy Inquiry – All Details"),
@@ -580,7 +427,7 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
                 By.xpath("//td[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'policy inquiry') and contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'all details')]"),
                 By.xpath("//button[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'all details')]"),
                 By.xpath("//input[contains(translate(@value,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'all details')]")
-        });
+        }, 25);
     }
 
     private void enterPolicyIdAndSubmit() throws Exception {
@@ -591,8 +438,7 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
         waitQuietly(1000);
         switchToLatestWindow();
 
-        WebElement policyInput = findPolicyIdInputFast(12);
-
+        WebElement policyInput = findPolicyIdInputFast(10);
         if (policyInput == null) {
             takeScreenshotQuietly("policy-id-input-not-found");
             printPageDiagnosticsDeep("policy id input not found");
@@ -611,7 +457,6 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
             System.out.println("Policy ID entered using Selenium sendKeys.");
         } catch (Exception e) {
             System.out.println("Selenium typing failed. Trying JavaScript typing. Error: " + e.getMessage());
-
             ((JavascriptExecutor) driver).executeScript(
                     "arguments[0].focus();" +
                             "arguments[0].value = arguments[1];" +
@@ -620,14 +465,12 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
                     policyInput,
                     policyId
             );
-
             System.out.println("Policy ID entered using JavaScript.");
         }
 
         takeScreenshot("06b-policy-id-entered");
 
         boolean okClicked = clickPolicyInquiryFooterOkFast();
-
         if (!okClicked) {
             takeScreenshotQuietly("policy-footer-ok-not-clicked");
             printPageDiagnosticsDeep("policy footer OK not clicked");
@@ -635,15 +478,13 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
         }
 
         waitForDocumentReady();
-        waitQuietly(3000);
+        waitQuietly(2500);
         takeScreenshot("07-policy-id-submitted");
-
         System.out.println("===== FAST POLICY ID ENTRY COMPLETE =====");
     }
 
     private WebElement findPolicyIdInputFast(int timeoutSeconds) {
         WebDriverWait fastWait = new WebDriverWait(driver, Duration.ofSeconds(timeoutSeconds));
-
         try {
             return fastWait.until(webDriver -> {
                 try {
@@ -664,24 +505,19 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
         }
 
         WebElement found = findPolicyIdInputInCurrentContext();
-
         if (found != null) {
             return found;
         }
 
         List<WebElement> frames = driver.findElements(By.cssSelector("frame, iframe"));
-
         for (int i = 0; i < frames.size(); i++) {
             try {
                 driver.switchTo().frame(i);
-
                 WebElement frameFound = findPolicyIdInputInCurrentContextOrFrames(depth + 1);
-
                 if (frameFound != null) {
                     System.out.println("Policy ID input found in frame depth " + depth + ", frame index " + i);
                     return frameFound;
                 }
-
                 driver.switchTo().parentFrame();
             } catch (Exception e) {
                 driver.switchTo().defaultContent();
@@ -691,13 +527,11 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
         if (depth == 0) {
             driver.switchTo().defaultContent();
         }
-
         return null;
     }
 
     private WebElement findPolicyIdInputInCurrentContext() {
         List<WebElement> inputs = driver.findElements(By.cssSelector("input"));
-
         WebElement firstVisibleTextInput = null;
 
         for (WebElement input : inputs) {
@@ -715,13 +549,7 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
                     continue;
                 }
 
-                boolean looksLikeTextInput =
-                        type.isEmpty()
-                                || "text".equals(type)
-                                || "search".equals(type)
-                                || "tel".equals(type)
-                                || "number".equals(type);
-
+                boolean looksLikeTextInput = type.isEmpty() || "text".equals(type) || "search".equals(type) || "tel".equals(type) || "number".equals(type);
                 if (!looksLikeTextInput) {
                     continue;
                 }
@@ -730,12 +558,7 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
                     continue;
                 }
 
-                if (name.contains("policy")
-                        || id.contains("policy")
-                        || name.contains("pol")
-                        || id.contains("pol")
-                        || title.contains("policy")
-                        || title.contains("pol")) {
+                if (name.contains("policy") || id.contains("policy") || name.contains("pol") || id.contains("pol") || title.contains("policy") || title.contains("pol")) {
                     System.out.println("Found Policy ID input using name/id/title.");
                     return input;
                 }
@@ -752,7 +575,6 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
             System.out.println("Using first visible text input as Policy ID input.");
             return firstVisibleTextInput;
         }
-
         return null;
     }
 
@@ -765,9 +587,7 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
 
         try {
             driver.switchTo().defaultContent();
-
             WebElement ok = findFooterOkButtonInCurrentContextOrFrames(0);
-
             if (ok != null) {
                 clickElementStrong(ok, "Policy Inquiry footer OK");
                 waitQuietly(1500);
@@ -779,9 +599,7 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
         }
 
         System.out.println("Trying footer OK coordinate fallback.");
-
         boolean clickedByCoordinate = clickFooterOkByCoordinateInFrames();
-
         if (clickedByCoordinate) {
             waitQuietly(1500);
             System.out.println("Footer OK clicked using coordinate fallback.");
@@ -797,24 +615,19 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
         }
 
         WebElement current = findFooterOkButtonInCurrentContext();
-
         if (current != null) {
             return current;
         }
 
         List<WebElement> frames = driver.findElements(By.cssSelector("frame, iframe"));
-
         for (int i = 0; i < frames.size(); i++) {
             try {
                 driver.switchTo().frame(i);
-
                 WebElement found = findFooterOkButtonInCurrentContextOrFrames(depth + 1);
-
                 if (found != null) {
                     System.out.println("Footer OK found in frame depth " + depth + ", frame index " + i);
                     return found;
                 }
-
                 driver.switchTo().parentFrame();
             } catch (Exception e) {
                 driver.switchTo().defaultContent();
@@ -824,30 +637,22 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
         if (depth == 0) {
             driver.switchTo().defaultContent();
         }
-
         return null;
     }
 
     private WebElement findFooterOkButtonInCurrentContext() {
         By[] okLocators = new By[]{
-                By.id("ok"),
-                By.name("ok"),
-                By.id("OK"),
-                By.name("OK"),
-
+                By.id("ok"), By.name("ok"), By.id("OK"), By.name("OK"),
                 By.xpath("//input[translate(normalize-space(@value),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='OK']"),
                 By.xpath("//button[translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='OK']"),
                 By.xpath("//a[translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='OK']"),
-
                 By.xpath("//input[contains(translate(@value,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
                 By.xpath("//input[contains(translate(@alt,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
                 By.xpath("//input[contains(translate(@title,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
                 By.xpath("//input[contains(translate(@src,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
-
                 By.xpath("//img[contains(translate(@alt,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
                 By.xpath("//img[contains(translate(@title,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
                 By.xpath("//img[contains(translate(@src,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
-
                 By.xpath("//area[contains(translate(@alt,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
                 By.xpath("//area[contains(translate(@title,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
                 By.xpath("//area[contains(translate(@href,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]")
@@ -855,7 +660,6 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
 
         for (By locator : okLocators) {
             List<WebElement> elements = driver.findElements(locator);
-
             for (WebElement element : elements) {
                 try {
                     if (element.isDisplayed() && element.isEnabled()) {
@@ -875,7 +679,6 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
                 }
             }
         }
-
         return null;
     }
 
@@ -930,17 +733,13 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
         }
 
         List<WebElement> frames = driver.findElements(By.cssSelector("frame, iframe"));
-
         for (int i = 0; i < frames.size(); i++) {
             try {
                 driver.switchTo().frame(i);
-
                 Boolean clicked = clickFooterOkByCoordinateRecursive(depth + 1);
-
                 if (Boolean.TRUE.equals(clicked)) {
                     return true;
                 }
-
                 driver.switchTo().parentFrame();
             } catch (Exception e) {
                 driver.switchTo().defaultContent();
@@ -950,49 +749,141 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
         if (depth == 0) {
             driver.switchTo().defaultContent();
         }
-
         return false;
     }
 
-    private void clickOkIfPresent(String label) {
-        System.out.println("Checking OK confirmation: " + label);
+    private WebElement findClickableElementInCurrentContextOrFrames(By locator, int depth) {
+        if (depth > 10) {
+            return null;
+        }
 
-        if (acceptAlertIfPresent(label)) {
-            return;
+        WebElement element = findClickableElementInCurrentContext(locator);
+        if (element != null) {
+            return element;
+        }
+
+        List<WebElement> frames = driver.findElements(By.cssSelector("frame, iframe"));
+        for (int i = 0; i < frames.size(); i++) {
+            try {
+                driver.switchTo().frame(i);
+                WebElement frameElement = findClickableElementInCurrentContextOrFrames(locator, depth + 1);
+                if (frameElement != null) {
+                    System.out.println("Element found in frame index " + i + " at depth " + depth);
+                    return frameElement;
+                }
+                driver.switchTo().parentFrame();
+            } catch (NoSuchFrameException | StaleElementReferenceException ignored) {
+                driver.switchTo().defaultContent();
+            } catch (Exception e) {
+                driver.switchTo().defaultContent();
+            }
+        }
+
+        if (depth == 0) {
+            driver.switchTo().defaultContent();
+        }
+        return null;
+    }
+
+    private WebElement findClickableElementInCurrentContext(By locator) {
+        List<WebElement> elements = driver.findElements(locator);
+        for (WebElement element : elements) {
+            try {
+                if (!element.isDisplayed() || !element.isEnabled()) {
+                    continue;
+                }
+                System.out.println(
+                        "Clickable candidate: tag=[" + element.getTagName() + "]" +
+                                ", text=[" + safeText(element) + "]" +
+                                ", type=[" + safeAttribute(element, "type") + "]" +
+                                ", name=[" + safeAttribute(element, "name") + "]" +
+                                ", id=[" + safeAttribute(element, "id") + "]" +
+                                ", value=[" + safeAttribute(element, "value") + "]" +
+                                ", alt=[" + safeAttribute(element, "alt") + "]" +
+                                ", title=[" + safeAttribute(element, "title") + "]" +
+                                ", src=[" + safeAttribute(element, "src") + "]"
+                );
+                return element;
+            } catch (StaleElementReferenceException ignored) {
+                // Try next candidate
+            }
+        }
+        return null;
+    }
+
+    private boolean clickBottomCenterInDefaultOrFrames() {
+        try {
+            driver.switchTo().defaultContent();
+            return Boolean.TRUE.equals(clickBottomCenterRecursive(0));
+        } catch (Exception e) {
+            System.out.println("Bottom-center fallback failed: " + e.getMessage());
+            return false;
+        } finally {
+            try {
+                driver.switchTo().defaultContent();
+            } catch (Exception ignored) {
+                // Ignore
+            }
+        }
+    }
+
+    private Boolean clickBottomCenterRecursive(int depth) {
+        if (depth > 10) {
+            return false;
         }
 
         try {
-            clickFirstAvailableShort("OK button " + label, new By[]{
-                    By.id("ok"),
-                    By.name("ok"),
-                    By.id("OK"),
-                    By.name("OK"),
-                    By.cssSelector("input[type='image']"),
-                    By.cssSelector("input[alt*='ok' i]"),
-                    By.cssSelector("input[title*='ok' i]"),
-                    By.cssSelector("img[alt*='ok' i]"),
-                    By.cssSelector("img[title*='ok' i]"),
-                    By.cssSelector("img[src*='ok' i]"),
-                    By.xpath("//button[translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='OK']"),
-                    By.xpath("//input[translate(@value,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='OK']"),
-                    By.xpath("//button[contains(translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
-                    By.xpath("//input[contains(translate(@value,'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'OK')]"),
-                    By.xpath("//a[translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='OK']")
-            });
+            Object clicked = ((JavascriptExecutor) driver).executeScript(
+                    "var points = [" +
+                            "  [Math.floor(window.innerWidth/2), Math.max(0, window.innerHeight-15)]," +
+                            "  [Math.floor(window.innerWidth/2), Math.max(0, window.innerHeight-25)]," +
+                            "  [Math.floor(window.innerWidth/2), Math.max(0, window.innerHeight-35)]," +
+                            "  [Math.floor(window.innerWidth/2), Math.max(0, window.innerHeight-45)]" +
+                            "];" +
+                            "for (var i = 0; i < points.length; i++) {" +
+                            "  var x = points[i][0];" +
+                            "  var y = points[i][1];" +
+                            "  var el = document.elementFromPoint(x, y);" +
+                            "  if (el) { el.click(); return true; }" +
+                            "}" +
+                            "return false;"
+            );
+
+            if (Boolean.TRUE.equals(clicked)) {
+                System.out.println("Clicked bottom-center element at frame depth " + depth);
+                return true;
+            }
         } catch (Exception e) {
-            System.out.println("No OK button found for: " + label + ". Continuing.");
+            System.out.println("Bottom-center click failed at depth " + depth + ": " + e.getMessage());
         }
+
+        List<WebElement> frames = driver.findElements(By.cssSelector("frame, iframe"));
+        for (int i = 0; i < frames.size(); i++) {
+            try {
+                driver.switchTo().frame(i);
+                Boolean clicked = clickBottomCenterRecursive(depth + 1);
+                if (Boolean.TRUE.equals(clicked)) {
+                    return true;
+                }
+                driver.switchTo().parentFrame();
+            } catch (Exception e) {
+                driver.switchTo().defaultContent();
+            }
+        }
+
+        if (depth == 0) {
+            driver.switchTo().defaultContent();
+        }
+        return false;
     }
 
     private boolean acceptAlertIfPresent(String label) {
         try {
             WebDriverWait shortWait = new WebDriverWait(driver, Duration.ofSeconds(3));
             Alert alert = shortWait.until(ExpectedConditions.alertIsPresent());
-
             System.out.println("Alert found for " + label + ". Text: " + alert.getText());
             alert.accept();
             System.out.println("Alert accepted for " + label);
-
             return true;
         } catch (TimeoutException | NoAlertPresentException e) {
             System.out.println("No browser alert present for " + label);
@@ -1000,56 +891,43 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
         }
     }
 
-    private void typeFirstAvailable(String fieldName, By[] locators, String value) {
-        WebElement element = findFirstAvailableElement(fieldName, locators, true, 30);
-
+    private void typeFirstAvailable(String fieldName, By[] locators, String value, int timeoutSeconds) {
+        WebElement element = findFirstAvailableElement(fieldName, locators, true, timeoutSeconds);
         clearAndType(element, value);
-
         System.out.println("Entered value for field: " + fieldName);
     }
 
-    private void typeIfAvailable(String fieldName, By[] locators, String value) {
+    private void typeIfAvailable(String fieldName, By[] locators, String value, int timeoutSeconds) {
         try {
-            WebElement element = findFirstAvailableElement(fieldName, locators, true, 5);
-
+            WebElement element = findFirstAvailableElement(fieldName, locators, true, timeoutSeconds);
             clearAndType(element, value);
-
             System.out.println("Entered optional value for field: " + fieldName);
         } catch (Exception e) {
             System.out.println("Optional field not found: " + fieldName + ". Continuing.");
         }
     }
 
-    private void clickFirstAvailable(String elementName, By[] locators) {
-        WebElement element = findFirstAvailableElement(elementName, locators, false, 30);
-
+    private void clickFirstAvailable(String elementName, By[] locators, int timeoutSeconds) {
+        WebElement element = findFirstAvailableElement(elementName, locators, false, timeoutSeconds);
         clickElementStrong(element, elementName);
-
         waitForDocumentReady();
-        waitQuietly(1500);
+        waitQuietly(1200);
         switchToLatestWindow();
-
         System.out.println("Clicked element: " + elementName);
     }
 
     private void clickFirstAvailableShort(String elementName, By[] locators) {
         WebElement element = findFirstAvailableElement(elementName, locators, false, 5);
-
         clickElementStrong(element, elementName);
-
         waitForDocumentReady();
-        waitQuietly(1000);
+        waitQuietly(800);
         switchToLatestWindow();
-
         System.out.println("Clicked element: " + elementName);
     }
 
     private void clickElementStrong(WebElement element, String label) {
         try {
-            ((JavascriptExecutor) driver).executeScript(
-                    "arguments[0].scrollIntoView({block:'center', inline:'center'});",
-                    element
-            );
+            ((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView({block:'center', inline:'center'});", element);
             waitQuietly(300);
         } catch (Exception ignored) {
             // Continue
@@ -1091,9 +969,7 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
         for (By locator : locators) {
             try {
                 driver.switchTo().defaultContent();
-
                 WebElement element = findElementInCurrentContextOrFrames(locator, true, 0);
-
                 if (element != null) {
                     System.out.println("Element exists using locator: " + locator);
                     return true;
@@ -1102,7 +978,6 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
                 // Try next locator
             }
         }
-
         return false;
     }
 
@@ -1114,17 +989,13 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
                 WebElement found = customWait.until((ExpectedCondition<WebElement>) webDriver -> {
                     try {
                         webDriver.switchTo().defaultContent();
-
                         WebElement element = findElementInCurrentContextOrFrames(locator, requireVisible, 0);
-
                         if (element == null) {
                             return null;
                         }
-
                         if (!element.isEnabled()) {
                             return null;
                         }
-
                         return element;
                     } catch (StaleElementReferenceException ignored) {
                         return null;
@@ -1147,7 +1018,6 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
         printPageDiagnosticsDeep("element not found: " + elementName);
         printAllLinks("element not found: " + elementName);
         printAllInputs("element not found: " + elementName);
-
         throw new RuntimeException("Unable to find element: " + elementName);
     }
 
@@ -1157,23 +1027,18 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
         }
 
         WebElement element = findElementInCurrentContext(locator, requireVisible);
-
         if (element != null) {
             return element;
         }
 
         List<WebElement> frames = driver.findElements(By.cssSelector("frame, iframe"));
-
         for (int i = 0; i < frames.size(); i++) {
             try {
                 driver.switchTo().frame(i);
-
                 WebElement frameElement = findElementInCurrentContextOrFrames(locator, requireVisible, depth + 1);
-
                 if (frameElement != null) {
                     return frameElement;
                 }
-
                 driver.switchTo().parentFrame();
             } catch (NoSuchFrameException | StaleElementReferenceException ignored) {
                 driver.switchTo().defaultContent();
@@ -1183,45 +1048,33 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
         if (depth == 0) {
             driver.switchTo().defaultContent();
         }
-
         return null;
     }
 
     private WebElement findElementInCurrentContext(By locator, boolean requireVisible) {
         List<WebElement> elements = driver.findElements(locator);
-
         for (WebElement element : elements) {
             try {
                 if (requireVisible && !element.isDisplayed()) {
                     continue;
                 }
-
                 return element;
             } catch (StaleElementReferenceException ignored) {
                 // Try next element
             }
         }
-
         return null;
     }
 
-    private WebElement findFirstVisibleElementDeep(
-            By[] locators,
-            String elementName,
-            boolean switchToElementFrame,
-            boolean inputOnly,
-            boolean selectOnly
-    ) {
+    private WebElement findFirstVisibleElementDeep(By[] locators, String elementName, boolean switchToElementFrame, boolean inputOnly, boolean selectOnly) {
         driver.switchTo().defaultContent();
 
         for (By locator : locators) {
             WebElement found = findFirstVisibleElementInContextOrFrames(locator, 0, switchToElementFrame, inputOnly, selectOnly);
-
             if (found != null) {
                 System.out.println("Found " + elementName + " using locator: " + locator);
                 return found;
             }
-
             driver.switchTo().defaultContent();
         }
 
@@ -1230,19 +1083,12 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
         return null;
     }
 
-    private WebElement findFirstVisibleElementInContextOrFrames(
-            By locator,
-            int depth,
-            boolean stayInFoundFrame,
-            boolean inputOnly,
-            boolean selectOnly
-    ) {
+    private WebElement findFirstVisibleElementInContextOrFrames(By locator, int depth, boolean stayInFoundFrame, boolean inputOnly, boolean selectOnly) {
         if (depth > 10) {
             return null;
         }
 
         List<WebElement> elements = driver.findElements(locator);
-
         for (WebElement element : elements) {
             try {
                 if (!element.isDisplayed() || !element.isEnabled()) {
@@ -1250,15 +1096,12 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
                 }
 
                 String tag = element.getTagName();
-
                 if (inputOnly && !"input".equalsIgnoreCase(tag)) {
                     continue;
                 }
-
                 if (selectOnly && !"select".equalsIgnoreCase(tag)) {
                     continue;
                 }
-
                 return element;
             } catch (StaleElementReferenceException ignored) {
                 // Try next element
@@ -1266,23 +1109,13 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
         }
 
         List<WebElement> frames = driver.findElements(By.cssSelector("frame, iframe"));
-
         for (int i = 0; i < frames.size(); i++) {
             try {
                 driver.switchTo().frame(i);
-
-                WebElement found = findFirstVisibleElementInContextOrFrames(
-                        locator,
-                        depth + 1,
-                        stayInFoundFrame,
-                        inputOnly,
-                        selectOnly
-                );
-
+                WebElement found = findFirstVisibleElementInContextOrFrames(locator, depth + 1, stayInFoundFrame, inputOnly, selectOnly);
                 if (found != null) {
                     return found;
                 }
-
                 driver.switchTo().parentFrame();
             } catch (NoSuchFrameException | StaleElementReferenceException ignored) {
                 driver.switchTo().defaultContent();
@@ -1292,7 +1125,6 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
         if (depth == 0) {
             driver.switchTo().defaultContent();
         }
-
         return null;
     }
 
@@ -1302,14 +1134,12 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
         } catch (Exception e) {
             System.out.println("Clear failed, continuing with typing: " + e.getMessage());
         }
-
         element.sendKeys(value);
     }
 
     private void selectCompanyValue(WebElement selectElement, String companyValue) {
         try {
             Select select = new Select(selectElement);
-
             try {
                 select.selectByVisibleText(companyValue);
                 System.out.println("Selected company by visible text: " + companyValue);
@@ -1337,12 +1167,10 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
 
     private boolean waitUntilTextAppearsInDefaultOrFrames(String text, int timeoutSeconds) {
         WebDriverWait textWait = new WebDriverWait(driver, Duration.ofSeconds(timeoutSeconds));
-
         try {
             return textWait.until(webDriver -> {
                 try {
                     webDriver.switchTo().defaultContent();
-
                     return pageSourceContainsTextInCurrentContextOrFrames(text, 0);
                 } catch (Exception e) {
                     return false;
@@ -1359,21 +1187,17 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
         }
 
         String source = driver.getPageSource();
-
         if (source != null && source.contains(text)) {
             return true;
         }
 
         List<WebElement> frames = driver.findElements(By.cssSelector("frame, iframe"));
-
         for (int i = 0; i < frames.size(); i++) {
             try {
                 driver.switchTo().frame(i);
-
                 if (pageSourceContainsTextInCurrentContextOrFrames(text, depth + 1)) {
                     return true;
                 }
-
                 driver.switchTo().parentFrame();
             } catch (NoSuchFrameException | StaleElementReferenceException ignored) {
                 driver.switchTo().defaultContent();
@@ -1383,18 +1207,15 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
         if (depth == 0) {
             driver.switchTo().defaultContent();
         }
-
         return false;
     }
 
     private void switchToLatestWindow() {
         try {
             String latestHandle = null;
-
             for (String handle : driver.getWindowHandles()) {
                 latestHandle = handle;
             }
-
             if (latestHandle != null) {
                 driver.switchTo().window(latestHandle);
                 System.out.println("Switched to latest window. URL: " + driver.getCurrentUrl());
@@ -1406,11 +1227,7 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
 
     private void waitForDocumentReady() {
         try {
-            wait.until(webDriver ->
-                    ((JavascriptExecutor) webDriver)
-                            .executeScript("return document.readyState")
-                            .equals("complete")
-            );
+            wait.until(webDriver -> ((JavascriptExecutor) webDriver).executeScript("return document.readyState").equals("complete"));
         } catch (Exception ignored) {
             System.out.println("Document ready check skipped or failed. Continuing.");
         }
@@ -1419,7 +1236,6 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
     private void printPageDiagnostics(String label) {
         try {
             driver.switchTo().defaultContent();
-
             System.out.println("===== PAGE DIAGNOSTICS: " + label + " =====");
             System.out.println("Current URL: " + driver.getCurrentUrl());
             System.out.println("Title: " + driver.getTitle());
@@ -1436,10 +1252,8 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
     private void printPageDiagnosticsDeep(String label) {
         try {
             driver.switchTo().defaultContent();
-
             System.out.println("===== DEEP PAGE DIAGNOSTICS: " + label + " =====");
             printCurrentContextDiagnostics("default content", 0);
-
             inspectFramesRecursive(0, "default");
             driver.switchTo().defaultContent();
         } catch (Exception e) {
@@ -1453,18 +1267,14 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
         }
 
         List<WebElement> frames = driver.findElements(By.cssSelector("frame, iframe"));
-
         System.out.println("Frame path [" + path + "] depth [" + depth + "] frame count: " + frames.size());
 
         for (int i = 0; i < frames.size(); i++) {
             try {
                 driver.switchTo().frame(i);
-
                 String framePath = path + " > frame[" + i + "]";
                 printCurrentContextDiagnostics(framePath, depth + 1);
-
                 inspectFramesRecursive(depth + 1, framePath);
-
                 driver.switchTo().parentFrame();
             } catch (Exception e) {
                 System.out.println("Unable to inspect frame path " + path + " frame[" + i + "]: " + e.getMessage());
@@ -1491,40 +1301,34 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
 
             for (int i = 0; i < inputs.size(); i++) {
                 WebElement input = inputs.get(i);
-                System.out.println(
-                        "Input[" + i + "]" +
-                                " type=[" + safeAttribute(input, "type") + "]" +
-                                " name=[" + safeAttribute(input, "name") + "]" +
-                                " id=[" + safeAttribute(input, "id") + "]" +
-                                " value=[" + safeAttribute(input, "value") + "]" +
-                                " alt=[" + safeAttribute(input, "alt") + "]" +
-                                " displayed=[" + safeIsDisplayed(input) + "]" +
-                                " enabled=[" + safeIsEnabled(input) + "]"
-                );
+                System.out.println("Input[" + i + "]" +
+                        " type=[" + safeAttribute(input, "type") + "]" +
+                        " name=[" + safeAttribute(input, "name") + "]" +
+                        " id=[" + safeAttribute(input, "id") + "]" +
+                        " value=[" + safeAttribute(input, "value") + "]" +
+                        " alt=[" + safeAttribute(input, "alt") + "]" +
+                        " displayed=[" + safeIsDisplayed(input) + "]" +
+                        " enabled=[" + safeIsEnabled(input) + "]");
             }
 
             for (int i = 0; i < selects.size(); i++) {
                 WebElement select = selects.get(i);
-                System.out.println(
-                        "Select[" + i + "]" +
-                                " name=[" + safeAttribute(select, "name") + "]" +
-                                " id=[" + safeAttribute(select, "id") + "]" +
-                                " displayed=[" + safeIsDisplayed(select) + "]" +
-                                " enabled=[" + safeIsEnabled(select) + "]"
-                );
+                System.out.println("Select[" + i + "]" +
+                        " name=[" + safeAttribute(select, "name") + "]" +
+                        " id=[" + safeAttribute(select, "id") + "]" +
+                        " displayed=[" + safeIsDisplayed(select) + "]" +
+                        " enabled=[" + safeIsEnabled(select) + "]");
             }
 
             for (int i = 0; i < buttons.size(); i++) {
                 WebElement button = buttons.get(i);
-                System.out.println(
-                        "Button[" + i + "]" +
-                                " text=[" + safeText(button) + "]" +
-                                " type=[" + safeAttribute(button, "type") + "]" +
-                                " name=[" + safeAttribute(button, "name") + "]" +
-                                " id=[" + safeAttribute(button, "id") + "]" +
-                                " displayed=[" + safeIsDisplayed(button) + "]" +
-                                " enabled=[" + safeIsEnabled(button) + "]"
-                );
+                System.out.println("Button[" + i + "]" +
+                        " text=[" + safeText(button) + "]" +
+                        " type=[" + safeAttribute(button, "type") + "]" +
+                        " name=[" + safeAttribute(button, "name") + "]" +
+                        " id=[" + safeAttribute(button, "id") + "]" +
+                        " displayed=[" + safeIsDisplayed(button) + "]" +
+                        " enabled=[" + safeIsEnabled(button) + "]");
             }
         } catch (Exception e) {
             System.out.println("Unable to print context diagnostics for " + contextName + ": " + e.getMessage());
@@ -1534,21 +1338,15 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
     private void printAllLinks(String label) {
         try {
             driver.switchTo().defaultContent();
-
             List<WebElement> links = driver.findElements(By.cssSelector("a"));
-
             System.out.println("===== LINK DIAGNOSTICS: " + label + " =====");
             System.out.println("Link count: " + links.size());
-
             for (int i = 0; i < links.size(); i++) {
                 WebElement link = links.get(i);
-
-                System.out.println(
-                        "Link[" + i + "] text=[" + safeText(link) + "]" +
-                                ", href=[" + safeAttribute(link, "href") + "]" +
-                                ", target=[" + safeAttribute(link, "target") + "]" +
-                                ", onclick=[" + safeAttribute(link, "onclick") + "]"
-                );
+                System.out.println("Link[" + i + "] text=[" + safeText(link) + "]" +
+                        ", href=[" + safeAttribute(link, "href") + "]" +
+                        ", target=[" + safeAttribute(link, "target") + "]" +
+                        ", onclick=[" + safeAttribute(link, "onclick") + "]");
             }
         } catch (Exception e) {
             System.out.println("Unable to print link diagnostics: " + e.getMessage());
@@ -1558,23 +1356,17 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
     private void printAllInputs(String label) {
         try {
             driver.switchTo().defaultContent();
-
             List<WebElement> inputs = driver.findElements(By.cssSelector("input, select, textarea, button"));
-
             System.out.println("===== INPUT/BUTTON DIAGNOSTICS: " + label + " =====");
             System.out.println("Input/Button count: " + inputs.size());
-
             for (int i = 0; i < inputs.size(); i++) {
                 WebElement input = inputs.get(i);
-
-                System.out.println(
-                        "Element[" + i + "] tag=[" + input.getTagName() + "]" +
-                                ", type=[" + safeAttribute(input, "type") + "]" +
-                                ", name=[" + safeAttribute(input, "name") + "]" +
-                                ", id=[" + safeAttribute(input, "id") + "]" +
-                                ", value=[" + safeAttribute(input, "value") + "]" +
-                                ", text=[" + safeText(input) + "]"
-                );
+                System.out.println("Element[" + i + "] tag=[" + input.getTagName() + "]" +
+                        ", type=[" + safeAttribute(input, "type") + "]" +
+                        ", name=[" + safeAttribute(input, "name") + "]" +
+                        ", id=[" + safeAttribute(input, "id") + "]" +
+                        ", value=[" + safeAttribute(input, "value") + "]" +
+                        ", text=[" + safeText(input) + "]");
             }
         } catch (Exception e) {
             System.out.println("Unable to print input diagnostics: " + e.getMessage());
@@ -1618,12 +1410,9 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
     private void takeScreenshot(String name) throws Exception {
         Path screenshotPath = Path.of(screenshotDir);
         Files.createDirectories(screenshotPath);
-
         File src = ((TakesScreenshot) driver).getScreenshotAs(OutputType.FILE);
         Path dest = screenshotPath.resolve(name + ".png");
-
         Files.copy(src.toPath(), dest, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-
         System.out.println("Screenshot saved: " + dest);
     }
 
@@ -1653,15 +1442,12 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
 
     private static String getProperty(String propertyName, String envName, String defaultValue) {
         String value = System.getProperty(propertyName);
-
         if (value == null || value.trim().isEmpty()) {
             value = System.getenv(envName);
         }
-
         if (value == null || value.trim().isEmpty()) {
             value = defaultValue;
         }
-
         return value;
     }
 
@@ -1672,51 +1458,3 @@ import io.github.bonigar = getProperty("app.password", "APP_PASSWORD", "ingenium
         }
     }
 }
-``
-import org.openqa.selenium.Alert;
-import org.openqa.selenium.By;
-import org.openqa.selenium.JavascriptExecutor;
-import org.openqa.selenium.Keys;
-import org.openqa.selenium.NoAlertPresentException;
-import org.openqa.selenium.NoSuchFrameException;
-import org.openqa.selenium.OutputType;
-import org.openqa.selenium.StaleElementReferenceException;
-import org.openqa.selenium.TakesScreenshot;
-import org.openqa.selenium.TimeoutException;
-import org.openqa.selenium.WebDriver;
-import org.openqa.selenium.WebDriverException;
-import org.openqa.selenium.WebElement;
-import org.openqa.selenium.chrome.ChromeDriver;
-import org.openqa.selenium.chrome.ChromeOptions;
-import org.openqa.selenium.support.ui.ExpectedCondition;
-import org.openqa.selenium.support.ui.ExpectedConditions;
-import org.openqa.selenium.support.ui.Select;
-import org.openqa.selenium.support.ui.WebDriverWait;
-import org.testng.Assert;
-import org.testng.annotations.AfterMethod;
-import org.testng.annotations.BeforeMethod;
-import org.testng.annotations.Test;
-
-import java.io.File;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.time.Duration;
-import java.util.List;
-
-public class PolicyInquiryTest {
-
-    private WebDriver driver;
-    private WebDriverWait wait;
-
-    private String appUrl;
-    private String company;
-    private String username;
-    private String password;
-    private String policyId;
-    private String screenshotDir;
-
-    @BeforeMethod
-    public void setUp() {
-        appUrl = getProperty("app.url", "APP_URL");
-        company = getProperty("company", "COMPANY", "Manulife");
-        username = getProperty("app.username", "APP_USERNAME", "gocc");
