@@ -1,4 +1,38 @@
-import { test, expect } from '@playwright/test';import {=====
+import { test, expect } from '@playwright/test';
+
+test('✅ FINAL Ingenium Policy.log("POLICY_ID:", POLICY_ID);test('✅ FINAL Ingenium Policy Inquiry Flow (Stable)', async ({ page }) => {
+
+    expect(BASE_URL).toBeTruthy();
+    expect(USERNAME).toBeTruthy();
+    expect(PASSWORD).toBeTruthy();
+    expect(POLICY_ID).toBeTruthy();
+
+    // ======================================================
+    // FRAME FINDER
+    // ======================================================
+    async function findFrame(page, predicate, retries = 15, delay = 2000) {
+      for (let i = 0; i < retries; i++) {
+        for (const f of page.frames()) {
+          try {
+            if (await predicate(f)) {
+              return f;
+            }
+          } catch {}
+        }
+
+        console.log(`⏳ Frame not ready (${i + 1}/${retries})`);
+        await page.waitForTimeout(delay);
+      }
+
+      await page.screenshot({
+        path: 'screenshots/frame-error.png',
+        fullPage: true
+      });
+
+      throw new Error('❌ Frame not found');
+    }
+
+    // ======================================================
     // SAFE CLICK
     // ======================================================
     async function safeClick(locator, retries = 5) {
@@ -39,27 +73,28 @@ import { test, expect } from '@playwright/test';import {=====
 
     // ======================================================
     // CLICK OK FROM ANY FRAME / FOOTER
+    // Ingenium footer OK may be in a separate frame.
     // ======================================================
     async function clickOkFromAnyFrame(screenName = '') {
       console.log(`🔘 Trying to click OK ${screenName ? 'for ' + screenName : ''}`);
 
-      const selectors = [
-        async (f) => f.getByRole('button', { name: /^OK$/i }),
-        async (f) => f.locator('input[value="OK"]'),
-        async (f) => f.locator('input[type="submit"][value="OK"]'),
-        async (f) => f.locator('input[type="button"][value="OK"]'),
-        async (f) => f.locator('input[type="image"][alt="OK"]'),
-        async (f) => f.locator('img[alt="OK"]'),
-        async (f) => f.locator('[title="OK"]'),
-        async (f) => f.locator('a').filter({ hasText: /^OK$/i }),
-        async (f) => f.locator('text=/^OK$/')
+      const selectorFactories = [
+        (f) => f.getByRole('button', { name: /^OK$/i }),
+        (f) => f.locator('input[value="OK"]'),
+        (f) => f.locator('input[type="submit"][value="OK"]'),
+        (f) => f.locator('input[type="button"][value="OK"]'),
+        (f) => f.locator('input[type="image"][alt="OK"]'),
+        (f) => f.locator('img[alt="OK"]'),
+        (f) => f.locator('[title="OK"]'),
+        (f) => f.locator('a').filter({ hasText: /^OK$/i }),
+        (f) => f.locator('text=/^OK$/')
       ];
 
       for (let attempt = 0; attempt < 8; attempt++) {
         for (const f of page.frames()) {
-          for (const getLocator of selectors) {
+          for (const makeLocator of selectorFactories) {
             try {
-              const loc = await getLocator(f);
+              const loc = makeLocator(f);
               const count = await loc.count();
 
               if (count > 0) {
@@ -67,7 +102,7 @@ import { test, expect } from '@playwright/test';import {=====
 
                 if (await first.isVisible().catch(() => false)) {
                   await first.click({ timeout: 5000 });
-                  console.log(`✅ Clicked OK using selector in frame: ${f.url()}`);
+                  console.log(`✅ Clicked OK using locator in frame: ${f.url()}`);
                   await page.waitForTimeout(4000);
                   return;
                 }
@@ -80,7 +115,7 @@ import { test, expect } from '@playwright/test';import {=====
         await page.waitForTimeout(1500);
       }
 
-      // Final fallback: footer OK button is visually at bottom center.
+      // Final fallback: OK button is visually in bottom footer.
       console.log("⚠️ OK selector not found, using footer coordinate fallback");
 
       const vp = page.viewportSize();
@@ -106,7 +141,7 @@ import { test, expect } from '@playwright/test';import {=====
 
       const menuFrame = await findFrame(page, async (f) => {
         return await f.locator('a').filter({ hasText: menuText }).count() > 0;
-      });
+      }, 15, 2000);
 
       await safeClick(
         menuFrame.locator('a').filter({ hasText: menuText })
@@ -129,10 +164,10 @@ import { test, expect } from '@playwright/test';import {=====
     }
 
     // ======================================================
-    // FIND CURRENT POLICY FORM FRAME
-    // IMPORTANT:
-    // Do NOT use title frame.
-    // Use visible Policy Id label + visible input.
+    // FIND POLICY FORM FRAME
+    // Important:
+    // Screen title and input are often in different frames.
+    // So we find the frame having visible Policy Id label + visible input.
     // ======================================================
     async function findPolicyFormFrame(screenName) {
       console.log(`🔎 Finding policy form frame for: ${screenName}`);
@@ -175,12 +210,11 @@ import { test, expect } from '@playwright/test';import {=====
     }
 
     // ======================================================
-    // SCROLL AND CAPTURE SCREENSHOTS
+    // SCROLL ALL FRAMES AND CAPTURE SCREENSHOTS
     // ======================================================
-    async function scrollAndCapture(prefix, count = 5) {
+    async function scrollAndCapture(prefix, count = 6) {
       console.log(`📸 Capturing scroll screenshots: ${prefix}`);
 
-      // Start from top.
       for (const f of page.frames()) {
         try {
           await f.evaluate(() => window.scrollTo(0, 0));
@@ -195,10 +229,11 @@ import { test, expect } from '@playwright/test';import {=====
           fullPage: true
         });
 
-        // Scroll all frames because Ingenium uses frames.
         for (const f of page.frames()) {
           try {
-            await f.evaluate(() => window.scrollBy(0, window.innerHeight * 0.85));
+            await f.evaluate(() => {
+              window.scrollBy(0, window.innerHeight * 0.85);
+            });
           } catch {}
         }
 
@@ -302,6 +337,7 @@ import { test, expect } from '@playwright/test';import {=====
 
     // ======================================================
     // STEP 8: FORM FRAME
+    // Existing logic preserved.
     // ======================================================
     const formFrame = await findFrame(page, async (f) => {
       return await f.locator('input').count() > 0;
@@ -425,16 +461,19 @@ import { test, expect } from '@playwright/test';import {=====
   } catch (e) {
     console.error("❌ TEST FAILURE:", e);
 
-    await page.screenshot({
-      path: 'screenshots/failure-final.png',
-      fullPage: true
-    });
+    try {
+      await page.screenshot({
+        path: 'screenshots/failure-final.png',
+        fullPage: true
+      });
+    } catch (screenshotError) {
+      console.error("❌ Could not capture failure screenshot:", screenshotError);
+    }
 
     throw e;
   }
 });
 
-test('✅ FINAL Ingenium Policy Inquiry Flow (Stable)', async ({ page }) => {
 
   try {
     const BASE_URL   = process.env.APP_URL;
@@ -445,29 +484,3 @@ test('✅ FINAL Ingenium Policy Inquiry Flow (Stable)', async ({ page }) => {
 
     console.log("🚀 START TEST");
     console.log("BASE_URL:", BASE_URL);
-    console.log("POLICY_ID:", POLICY_ID);
-
-    expect(POLICY_ID).toBeTruthy();
-
-    // ======================================================
-    // FRAME FINDER
-    // ======================================================
-    async function findFrame(page, predicate, retries = 15, delay = 2000) {
-      for (let i = 0; i < retries; i++) {
-        for (const f of page.frames()) {
-          try {
-            if (await predicate(f)) return f;
-          } catch {}
-        }
-
-        console.log(`⏳ Frame not ready (${i + 1}/${retries})`);
-        await page.waitForTimeout(delay);
-      }
-
-      await page.screenshot({
-        path: 'screenshots/frame-error.png',
-        fullPage: true
-      });
-
-      throw new Error('❌ Frame not found');
-    }
