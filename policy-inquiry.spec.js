@@ -17,7 +17,7 @@ test('✅ FINAL Ingenium Policy Inquiry Flow (Stable)', async ({ page }) => {
     expect(POLICY_ID).toBeTruthy();
 
     // ======================================================
-    // FRAME FINDER (ROBUST + DEBUG)
+    // FRAME FINDER
     // ======================================================
     async function findFrame(page, predicate, retries = 10, delay = 2000) {
       for (let i = 0; i < retries; i++) {
@@ -26,21 +26,13 @@ test('✅ FINAL Ingenium Policy Inquiry Flow (Stable)', async ({ page }) => {
             if (await predicate(f)) return f;
           } catch {}
         }
-
-        console.log(`⏳ Frame not ready (${i + 1}/${retries})`);
         await page.waitForTimeout(delay);
       }
-
-      await page.screenshot({
-        path: 'screenshots/frame-error.png',
-        fullPage: true
-      });
-
       throw new Error('❌ Frame not found');
     }
 
     // ======================================================
-    // SAFE CLICK (STRONGER)
+    // SAFE CLICK
     // ======================================================
     async function safeClick(locator, retries = 5) {
       for (let i = 0; i < retries; i++) {
@@ -48,9 +40,7 @@ test('✅ FINAL Ingenium Policy Inquiry Flow (Stable)', async ({ page }) => {
           await locator.first().waitFor({ state: 'visible', timeout: 5000 });
           await locator.first().click({ timeout: 5000 });
           return;
-        } catch (e) {
-          console.log(`⚠️ Click retry ${i + 1}`);
-
+        } catch {
           try {
             const box = await locator.first().boundingBox();
             if (box) {
@@ -58,38 +48,26 @@ test('✅ FINAL Ingenium Policy Inquiry Flow (Stable)', async ({ page }) => {
               return;
             }
           } catch {}
-
           await locator.page().waitForTimeout(2000);
         }
       }
-
-      await locator.page().screenshot({
-        path: 'screenshots/click-error.png',
-        fullPage: true
-      });
-
       throw new Error('❌ Failed to click element');
     }
 
     // ======================================================
-    // STEP 1: Launch (FIXED)
+    // STEP 1: Launch
     // ======================================================
     await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(5000);
 
-    await page.screenshot({
-      path: 'screenshots/01-launch.png',
-      fullPage: true
-    });
+    await page.screenshot({ path: 'screenshots/01-launch.png', fullPage: true });
 
     // ======================================================
     // STEP 2: English button
     // ======================================================
     const english = page.getByText('English Sign On');
-
     if (await english.isVisible().catch(() => false)) {
       await english.click();
-      console.log("✅ Clicked English Sign On");
     }
 
     await page.waitForTimeout(5000);
@@ -97,11 +75,9 @@ test('✅ FINAL Ingenium Policy Inquiry Flow (Stable)', async ({ page }) => {
     // ======================================================
     // STEP 3: LOGIN FRAME
     // ======================================================
-    const loginFrame = await findFrame(page, async (f) => {
-      return await f.locator('input[type="password"]').count() > 0;
-    });
-
-    console.log("✅ Login frame found");
+    const loginFrame = await findFrame(page, async (f) =>
+      await f.locator('input[type="password"]').count() > 0
+    );
 
     // ======================================================
     // STEP 4: LOGIN
@@ -112,105 +88,162 @@ test('✅ FINAL Ingenium Policy Inquiry Flow (Stable)', async ({ page }) => {
 
     await safeClick(loginFrame.getByRole('button', { name: /submit/i }));
 
-    console.log("✅ Login submitted");
-
     await page.waitForTimeout(5000);
 
-    await page.screenshot({
-      path: 'screenshots/02-after-login.png',
-      fullPage: true
-    });
-
     // ======================================================
-    // STEP 5: OK POPUP AFTER LOGIN
+    // STEP 5: OK Popup
     // ======================================================
     try {
-      const popupFrame = await findFrame(page, async (f) => {
-        return await f.getByRole('button', { name: 'OK' }).count() > 0;
-      }, 3, 2000);
+      const popupFrame = await findFrame(page, async (f) =>
+        await f.getByRole('button', { name: 'OK' }).count() > 0
+      , 3);
 
       await safeClick(popupFrame.getByRole('button', { name: 'OK' }));
-
-      console.log("✅ Clicked OK popup");
-
       await page.waitForTimeout(8000);
-    } catch {
-      console.log("✅ No popup");
-    }
+    } catch {}
 
     // ======================================================
     // STEP 6: APP FRAME
     // ======================================================
-    const appFrame = await findFrame(page, async (f) => {
-      return await f.locator('span[title="Policy Inquiry"]').count() > 0;
-    });
-
-    console.log("✅ App frame ready");
+    const appFrame = await findFrame(page, async (f) =>
+      await f.locator('span[title="Policy Inquiry"]').count() > 0
+    );
 
     // ======================================================
     // STEP 7: NAVIGATION
     // ======================================================
     await safeClick(appFrame.locator('span[title="Policy Inquiry"]'));
-
-    await safeClick(
-      appFrame.locator('a').filter({ hasText: 'Policy Inquiry - All Details' })
-    );
-
-    console.log("✅ Navigation successful");
+    await safeClick(appFrame.locator('a').filter({ hasText: 'Policy Inquiry - All Details' }));
 
     await page.waitForTimeout(5000);
 
     // ======================================================
     // STEP 8: FORM FRAME
     // ======================================================
-    const formFrame = await findFrame(page, async (f) => {
-      return await f.locator('input').count() > 0;
-    });
+    const formFrame = await findFrame(page, async (f) =>
+      await f.locator('input').count() > 0
+    );
 
     await formFrame.locator('input').first().fill(POLICY_ID);
-
-    console.log("✅ Policy ID entered:", POLICY_ID);
 
     await page.waitForTimeout(3000);
 
     // ======================================================
-    // STEP 9: OK CLICK
+    // STEP 9: OK
     // ======================================================
     try {
-      const okFrame = await findFrame(page, async (f) => {
-        return await f.getByRole('button', { name: 'OK' }).count() > 0;
-      }, 5, 2000);
+      const okFrame = await findFrame(page, async (f) =>
+        await f.getByRole('button', { name: 'OK' }).count() > 0
+      );
 
       await safeClick(okFrame.getByRole('button', { name: 'OK' }));
-
-      console.log("✅ Clicked OK after policy");
-
       await page.waitForTimeout(6000);
-
-    } catch {
-      console.log("⚠️ OK not found → fallback click");
-
-      const vp = page.viewportSize();
-      if (vp) {
-        await page.mouse.click(Math.floor(vp.width / 2), Math.floor(vp.height - 40));
-        console.log("✅ Fallback OK click");
-      }
-    }
+    } catch {}
 
     // ======================================================
-    // STEP 10: FINAL SCREENSHOT
+    // STEP 10: Screenshot
     // ======================================================
-    const path = `screenshots/policy-${POLICY_ID}.png`;
-
     await page.screenshot({
-      path,
+      path: `screenshots/policy-${POLICY_ID}.png`,
       fullPage: true
     });
 
-    console.log(`✅ Screenshot saved: ${path}`);
+    // ======================================================
+    // ✅ STEP 11: Coverage Values
+    // ======================================================
+    await safeClick(appFrame.locator('a').filter({ hasText: 'Inquiry - Coverage Values' }));
+
+    const cvFrame = await findFrame(page, async (f) =>
+      await f.locator('input').count() > 0
+    );
+
+    await cvFrame.locator('input').first().fill(POLICY_ID);
+
+    await page.waitForTimeout(2000);
+
+    try {
+      const okFrame = await findFrame(page, async (f) =>
+        await f.getByRole('button', { name: 'OK' }).count() > 0
+      );
+      await safeClick(okFrame.getByRole('button', { name: 'OK' }));
+    } catch {}
+
+    await page.waitForTimeout(5000);
+
+    await page.screenshot({
+      path: `screenshots/coverage-values-${POLICY_ID}.png`,
+      fullPage: true
+    });
+
+    // ======================================================
+    // ✅ STEP 12: Coverage Details (scroll capture)
+    // ======================================================
+    await safeClick(appFrame.locator('a').filter({ hasText: 'Inquiry - Coverage Details' }));
+
+    const cdFrame = await findFrame(page, async (f) =>
+      await f.locator('input').count() > 0
+    );
+
+    await cdFrame.locator('input').first().fill(POLICY_ID);
+
+    await page.waitForTimeout(2000);
+
+    try {
+      const okFrame = await findFrame(page, async (f) =>
+        await f.getByRole('button', { name: 'OK' }).count() > 0
+      );
+      await safeClick(okFrame.getByRole('button', { name: 'OK' }));
+    } catch {}
+
+    await page.waitForTimeout(6000);
+
+    for (let i = 0; i < 5; i++) {
+      await page.mouse.wheel(0, 2000);
+
+      await page.screenshot({
+        path: `screenshots/coverage-details-${POLICY_ID}-${i + 1}.png`,
+        fullPage: false
+      });
+
+      await page.waitForTimeout(1500);
+    }
+
+    // ======================================================
+    // ✅ STEP 13: Call Centre Info (scroll capture)
+    // ======================================================
+    await safeClick(appFrame.locator('a').filter({ hasText: 'Inquiry - Call Centre Information' }));
+
+    const ccFrame = await findFrame(page, async (f) =>
+      await f.locator('input').count() > 0
+    );
+
+    await ccFrame.locator('input').first().fill(POLICY_ID);
+
+    await page.waitForTimeout(2000);
+
+    try {
+      const okFrame = await findFrame(page, async (f) =>
+        await f.getByRole('button', { name: 'OK' }).count() > 0
+      );
+      await safeClick(okFrame.getByRole('button', { name: 'OK' }));
+    } catch {}
+
+    await page.waitForTimeout(6000);
+
+    for (let i = 0; i < 5; i++) {
+      await page.mouse.wheel(0, 2000);
+
+      await page.screenshot({
+        path: `screenshots/call-centre-${POLICY_ID}-${i + 1}.png`,
+        fullPage: false
+      });
+
+      await page.waitForTimeout(1500);
+    }
+
+    console.log("✅ ALL FLOWS COMPLETED SUCCESSFULLY");
 
   } catch (e) {
-
     console.error("❌ TEST FAILURE:", e);
 
     await page.screenshot({
