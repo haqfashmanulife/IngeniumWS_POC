@@ -1,6 +1,16 @@
 import { test, expect } from '@playwright/test';
 
-test('✅ FINAL Ingenium Policy.log("POLICY_ID:", POLICY_ID);test('✅ FINAL Ingenium Policy Inquiry Flow (Stable)', async ({ page }) => {
+test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
+  try {
+    const BASE_URL = process.env.APP_URL;
+    const USERNAME = process.env.APP_USERNAME;
+    const PASSWORD = process.env.APP_PASSWORD;
+    const COMPANY = process.env.COMPANY || 'Manulife';
+    const POLICY_ID = process.env.POLICY_ID;
+
+    console.log('START TEST');
+    console.log('BASE_URL:', BASE_URL);
+    console.log('POLICY_ID:', POLICY_ID);
 
     expect(BASE_URL).toBeTruthy();
     expect(USERNAME).toBeTruthy();
@@ -20,7 +30,7 @@ test('✅ FINAL Ingenium Policy.log("POLICY_ID:", POLICY_ID);test('✅ FINAL Ing
           } catch {}
         }
 
-        console.log(`⏳ Frame not ready (${i + 1}/${retries})`);
+        console.log(`Frame not ready (${i + 1}/${retries})`);
         await page.waitForTimeout(delay);
       }
 
@@ -29,7 +39,7 @@ test('✅ FINAL Ingenium Policy.log("POLICY_ID:", POLICY_ID);test('✅ FINAL Ing
         fullPage: true
       });
 
-      throw new Error('❌ Frame not found');
+      throw new Error('Frame not found');
     }
 
     // ======================================================
@@ -49,7 +59,7 @@ test('✅ FINAL Ingenium Policy.log("POLICY_ID:", POLICY_ID);test('✅ FINAL Ing
 
           return;
         } catch (e) {
-          console.log(`⚠️ Click retry ${i + 1}: ${e.message}`);
+          console.log(`Click retry ${i + 1}: ${e.message}`);
 
           try {
             const box = await locator.first().boundingBox();
@@ -68,7 +78,7 @@ test('✅ FINAL Ingenium Policy.log("POLICY_ID:", POLICY_ID);test('✅ FINAL Ing
         fullPage: true
       });
 
-      throw new Error('❌ Failed to click element');
+      throw new Error('Failed to click element');
     }
 
     // ======================================================
@@ -76,7 +86,7 @@ test('✅ FINAL Ingenium Policy.log("POLICY_ID:", POLICY_ID);test('✅ FINAL Ing
     // Ingenium footer OK may be in a separate frame.
     // ======================================================
     async function clickOkFromAnyFrame(screenName = '') {
-      console.log(`🔘 Trying to click OK ${screenName ? 'for ' + screenName : ''}`);
+      console.log(`Trying to click OK ${screenName ? 'for ' + screenName : ''}`);
 
       const selectorFactories = [
         (f) => f.getByRole('button', { name: /^OK$/i }),
@@ -102,8 +112,8 @@ test('✅ FINAL Ingenium Policy.log("POLICY_ID:", POLICY_ID);test('✅ FINAL Ing
 
                 if (await first.isVisible().catch(() => false)) {
                   await first.click({ timeout: 5000 });
-                  console.log(`✅ Clicked OK using locator in frame: ${f.url()}`);
-                  await page.waitForTimeout(4000);
+                  console.log(`Clicked OK using locator in frame: ${f.url()}`);
+                  await page.waitForTimeout(5000);
                   return;
                 }
               }
@@ -111,12 +121,12 @@ test('✅ FINAL Ingenium Policy.log("POLICY_ID:", POLICY_ID);test('✅ FINAL Ing
           }
         }
 
-        console.log(`⏳ OK not ready yet (${attempt + 1}/8)`);
+        console.log(`OK not ready yet (${attempt + 1}/8)`);
         await page.waitForTimeout(1500);
       }
 
       // Final fallback: OK button is visually in bottom footer.
-      console.log("⚠️ OK selector not found, using footer coordinate fallback");
+      console.log('OK selector not found, using footer coordinate fallback');
 
       const vp = page.viewportSize();
       if (vp) {
@@ -126,18 +136,18 @@ test('✅ FINAL Ingenium Policy.log("POLICY_ID:", POLICY_ID);test('✅ FINAL Ing
         );
 
         await page.waitForTimeout(5000);
-        console.log("✅ Clicked OK using footer coordinate fallback");
+        console.log('Clicked OK using footer coordinate fallback');
         return;
       }
 
-      throw new Error('❌ Could not click OK');
+      throw new Error('Could not click OK');
     }
 
     // ======================================================
     // CLICK LEFT MENU ITEM
     // ======================================================
     async function clickLeftMenu(menuText) {
-      console.log(`📌 Opening menu: ${menuText}`);
+      console.log(`Opening menu: ${menuText}`);
 
       const menuFrame = await findFrame(page, async (f) => {
         return await f.locator('a').filter({ hasText: menuText }).count() > 0;
@@ -154,23 +164,22 @@ test('✅ FINAL Ingenium Policy.log("POLICY_ID:", POLICY_ID);test('✅ FINAL Ing
     // WAIT FOR SCREEN TITLE
     // ======================================================
     async function waitForScreenTitle(titleText) {
-      console.log(`🔎 Waiting for screen title: ${titleText}`);
+      console.log(`Waiting for screen title: ${titleText}`);
 
       await findFrame(page, async (f) => {
         return await f.locator(`text=${titleText}`).count() > 0;
       }, 15, 2000);
 
-      console.log(`✅ Screen title found: ${titleText}`);
+      console.log(`Screen title found: ${titleText}`);
     }
 
     // ======================================================
     // FIND POLICY FORM FRAME
-    // Important:
     // Screen title and input are often in different frames.
-    // So we find the frame having visible Policy Id label + visible input.
+    // So find frame having visible Policy Id label + visible input.
     // ======================================================
     async function findPolicyFormFrame(screenName) {
-      console.log(`🔎 Finding policy form frame for: ${screenName}`);
+      console.log(`Finding policy form frame for: ${screenName}`);
 
       const formFrame = await findFrame(page, async (f) => {
         const hasPolicyLabel =
@@ -182,7 +191,7 @@ test('✅ FINAL Ingenium Policy.log("POLICY_ID:", POLICY_ID);test('✅ FINAL Ing
         return hasPolicyLabel && visibleInputs;
       }, 15, 2000);
 
-      console.log(`✅ Policy form frame found for: ${screenName}`);
+      console.log(`Policy form frame found for: ${screenName}`);
       return formFrame;
     }
 
@@ -204,7 +213,7 @@ test('✅ FINAL Ingenium Policy.log("POLICY_ID:", POLICY_ID);test('✅ FINAL Ing
         timeout: 10000
       });
 
-      console.log(`✅ Policy ID entered for ${screenName}: ${POLICY_ID}`);
+      console.log(`Policy ID entered for ${screenName}: ${POLICY_ID}`);
 
       return formFrame;
     }
@@ -213,7 +222,7 @@ test('✅ FINAL Ingenium Policy.log("POLICY_ID:", POLICY_ID);test('✅ FINAL Ing
     // SCROLL ALL FRAMES AND CAPTURE SCREENSHOTS
     // ======================================================
     async function scrollAndCapture(prefix, count = 6) {
-      console.log(`📸 Capturing scroll screenshots: ${prefix}`);
+      console.log(`Capturing scroll screenshots: ${prefix}`);
 
       for (const f of page.frames()) {
         try {
@@ -240,7 +249,7 @@ test('✅ FINAL Ingenium Policy.log("POLICY_ID:", POLICY_ID);test('✅ FINAL Ing
         await page.waitForTimeout(1500);
       }
 
-      console.log(`✅ Completed screenshots for: ${prefix}`);
+      console.log(`Completed screenshots for: ${prefix}`);
     }
 
     // ======================================================
@@ -264,7 +273,7 @@ test('✅ FINAL Ingenium Policy.log("POLICY_ID:", POLICY_ID);test('✅ FINAL Ing
 
     if (await english.isVisible().catch(() => false)) {
       await english.click();
-      console.log("✅ Clicked English Sign On");
+      console.log('Clicked English Sign On');
     }
 
     await page.waitForTimeout(5000);
@@ -276,7 +285,7 @@ test('✅ FINAL Ingenium Policy.log("POLICY_ID:", POLICY_ID);test('✅ FINAL Ing
       return await f.locator('input[type="password"]').count() > 0;
     });
 
-    console.log("✅ Login frame found");
+    console.log('Login frame found');
 
     // ======================================================
     // STEP 4: LOGIN
@@ -287,7 +296,7 @@ test('✅ FINAL Ingenium Policy.log("POLICY_ID:", POLICY_ID);test('✅ FINAL Ing
 
     await safeClick(loginFrame.getByRole('button', { name: /submit/i }));
 
-    console.log("✅ Login submitted");
+    console.log('Login submitted');
 
     await page.waitForTimeout(5000);
 
@@ -306,11 +315,11 @@ test('✅ FINAL Ingenium Policy.log("POLICY_ID:", POLICY_ID);test('✅ FINAL Ing
 
       await safeClick(popupFrame.getByRole('button', { name: 'OK' }));
 
-      console.log("✅ Clicked OK popup");
+      console.log('Clicked OK popup');
 
       await page.waitForTimeout(8000);
     } catch {
-      console.log("✅ No popup");
+      console.log('No popup');
     }
 
     // ======================================================
@@ -320,7 +329,7 @@ test('✅ FINAL Ingenium Policy.log("POLICY_ID:", POLICY_ID);test('✅ FINAL Ing
       return await f.locator('span[title="Policy Inquiry"]').count() > 0;
     });
 
-    console.log("✅ App frame ready");
+    console.log('App frame ready');
 
     // ======================================================
     // STEP 7: EXISTING FLOW - POLICY INQUIRY ALL DETAILS
@@ -331,7 +340,7 @@ test('✅ FINAL Ingenium Policy.log("POLICY_ID:", POLICY_ID);test('✅ FINAL Ing
       appFrame.locator('a').filter({ hasText: 'Policy Inquiry - All Details' })
     );
 
-    console.log("✅ Navigation successful");
+    console.log('Navigation successful');
 
     await page.waitForTimeout(5000);
 
@@ -345,7 +354,7 @@ test('✅ FINAL Ingenium Policy.log("POLICY_ID:", POLICY_ID);test('✅ FINAL Ing
 
     await formFrame.locator('input').first().fill(POLICY_ID);
 
-    console.log("✅ Policy ID entered:", POLICY_ID);
+    console.log('Policy ID entered:', POLICY_ID);
 
     await page.waitForTimeout(3000);
 
@@ -359,12 +368,12 @@ test('✅ FINAL Ingenium Policy.log("POLICY_ID:", POLICY_ID);test('✅ FINAL Ing
 
       await safeClick(okFrame.getByRole('button', { name: 'OK' }));
 
-      console.log("✅ Clicked OK after policy");
+      console.log('Clicked OK after policy');
 
       await page.waitForTimeout(6000);
 
     } catch {
-      console.log("⚠️ OK not found in frame → fallback click");
+      console.log('OK not found in frame, fallback click');
 
       const vp = page.viewportSize();
       if (vp) {
@@ -373,7 +382,7 @@ test('✅ FINAL Ingenium Policy.log("POLICY_ID:", POLICY_ID);test('✅ FINAL Ing
 
         await page.mouse.click(x, y);
 
-        console.log("✅ OK clicked via fallback");
+        console.log('OK clicked via fallback');
       }
     }
 
@@ -385,7 +394,7 @@ test('✅ FINAL Ingenium Policy.log("POLICY_ID:", POLICY_ID);test('✅ FINAL Ing
       fullPage: true
     });
 
-    console.log(`✅ Screenshot saved: screenshots/policy-${POLICY_ID}.png`);
+    console.log(`Screenshot saved: screenshots/policy-${POLICY_ID}.png`);
 
     // ======================================================
     // STEP 11: NEW FLOW - INQUIRY COVERAGE VALUES
@@ -410,7 +419,7 @@ test('✅ FINAL Ingenium Policy.log("POLICY_ID:", POLICY_ID);test('✅ FINAL Ing
       fullPage: true
     });
 
-    console.log("✅ Coverage Values completed");
+    console.log('Coverage Values completed');
 
     // ======================================================
     // STEP 12: NEW FLOW - INQUIRY COVERAGE DETAILS
@@ -432,7 +441,7 @@ test('✅ FINAL Ingenium Policy.log("POLICY_ID:", POLICY_ID);test('✅ FINAL Ing
 
     await scrollAndCapture('coverage-details', 6);
 
-    console.log("✅ Coverage Details completed");
+    console.log('Coverage Details completed');
 
     // ======================================================
     // STEP 13: NEW FLOW - CALL CENTRE INFORMATION
@@ -454,12 +463,12 @@ test('✅ FINAL Ingenium Policy.log("POLICY_ID:", POLICY_ID);test('✅ FINAL Ing
 
     await scrollAndCapture('call-centre', 6);
 
-    console.log("✅ Call Centre Information completed");
+    console.log('Call Centre Information completed');
 
-    console.log("✅ ALL FLOWS COMPLETED SUCCESSFULLY");
+    console.log('ALL FLOWS COMPLETED SUCCESSFULLY');
 
   } catch (e) {
-    console.error("❌ TEST FAILURE:", e);
+    console.error('TEST FAILURE:', e);
 
     try {
       await page.screenshot({
@@ -467,20 +476,9 @@ test('✅ FINAL Ingenium Policy.log("POLICY_ID:", POLICY_ID);test('✅ FINAL Ing
         fullPage: true
       });
     } catch (screenshotError) {
-      console.error("❌ Could not capture failure screenshot:", screenshotError);
+      console.error('Could not capture failure screenshot:', screenshotError);
     }
 
     throw e;
   }
 });
-
-
-  try {
-    const BASE_URL   = process.env.APP_URL;
-    const USERNAME   = process.env.APP_USERNAME;
-    const PASSWORD   = process.env.APP_PASSWORD;
-    const COMPANY    = process.env.COMPANY || 'Manulife';
-    const POLICY_ID  = process.env.POLICY_ID;
-
-    console.log("🚀 START TEST");
-    console.log("BASE_URL:", BASE_URL);
