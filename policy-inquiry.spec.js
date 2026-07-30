@@ -137,20 +137,36 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
     }
 
     // ======================================================
-    // CLICK MAIN MENU AND SUB MENU
-    // Used for Major Policy Change -> Coverage Risk Inquiry.
+    // CLICK SUB MENU UNDER MAIN MENU
+    // Used for Major Policy Change screens.
+    // It first tries the submenu directly. If the submenu is not visible,
+    // it opens the main menu and then clicks the submenu.
     // ======================================================
-    async function clickMainMenuAndSubMenu(mainMenuTitle, subMenuText) {
-      console.log(`Opening main menu: ${mainMenuTitle}`);
+    async function clickSubMenuUnderMainMenu(mainMenuTitle, subMenuText) {
+      console.log(`Opening submenu under ${mainMenuTitle}: ${subMenuText}`);
 
+      for (let directAttempt = 0; directAttempt < 3; directAttempt++) {
+        for (const f of page.frames()) {
+          try {
+            const subMenu = f.locator('a').filter({ hasText: subMenuText });
+            if ((await subMenu.count()) > 0 && await subMenu.first().isVisible().catch(() => false)) {
+              await safeClick(subMenu);
+              await page.waitForTimeout(5000);
+              console.log(`Clicked visible submenu directly: ${subMenuText}`);
+              return;
+            }
+          } catch {}
+        }
+        await page.waitForTimeout(1000);
+      }
+
+      console.log(`Submenu not visible yet. Opening main menu: ${mainMenuTitle}`);
       const mainMenuFrame = await findFrame(page, async (f) => {
         return await f.locator(`span[title="${mainMenuTitle}"]`).count() > 0;
       }, 15, 2000);
 
       await safeClick(mainMenuFrame.locator(`span[title="${mainMenuTitle}"]`));
       await page.waitForTimeout(3000);
-
-      console.log(`Opening submenu: ${subMenuText}`);
 
       const subMenuFrame = await findFrame(page, async (f) => {
         return await f.locator('a').filter({ hasText: subMenuText }).count() > 0;
@@ -192,7 +208,7 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
     // ======================================================
     // FILL POLICY ID ON CURRENT SCREEN
     // Default keeps all existing flows using POLICY_ID.
-    // New Major Policy Change flow passes MAJOR_POLICY_ID.
+    // Major Policy Change flows pass MAJOR_POLICY_ID.
     // ======================================================
     async function fillPolicyIdOnScreen(screenName, policyId = POLICY_ID) {
       const formFrame = await findPolicyFormFrame(screenName);
@@ -207,7 +223,7 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
     // ======================================================
     // SCROLL ALL FRAMES AND CAPTURE SCREENSHOTS
     // Default keeps all existing screenshot names using POLICY_ID.
-    // New Major Policy Change flow passes MAJOR_POLICY_ID.
+    // Major Policy Change flows pass MAJOR_POLICY_ID.
     // ======================================================
     async function scrollAndCapture(prefix, count = 6, policyId = POLICY_ID) {
       console.log(`Capturing scroll screenshots: ${prefix}`);
@@ -373,20 +389,36 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
     console.log('Call Centre Information completed');
 
     // ======================================================
-    // STEP 14: NEW FLOW - MAJOR POLICY CHANGE / COVERAGE RISK INQUIRY
+    // STEP 14: MAJOR POLICY CHANGE - COVERAGE RISK INQUIRY
     // Uses MAJOR_POLICY_ID fetched from TPOLL.
     // Existing POLICY_ID flow remains unchanged.
     // ======================================================
-    await clickMainMenuAndSubMenu('Major Policy Change', 'Coverage Risk Inquiry');
+    await clickSubMenuUnderMainMenu('Major Policy Change', 'Coverage Risk Inquiry');
     await waitForScreenTitle('Coverage Risk Inquiry');
     await fillPolicyIdOnScreen('Coverage Risk Inquiry', MAJOR_POLICY_ID);
 
-    await page.screenshot({ path: `screenshots/coverage-risk-before-ok-${MAJOR_POLICY_ID}.png`, fullPage: true });
+    await page.screenshot({ path: `screenshots/coverage-risk-inquiry-before-ok-${MAJOR_POLICY_ID}.png`, fullPage: true });
     await clickOkFromAnyFrame('Coverage Risk Inquiry');
     await page.waitForTimeout(7000);
-    await page.screenshot({ path: `screenshots/coverage-risk-${MAJOR_POLICY_ID}.png`, fullPage: true });
-    await scrollAndCapture('coverage-risk', 8, MAJOR_POLICY_ID);
+    await page.screenshot({ path: `screenshots/coverage-risk-inquiry-${MAJOR_POLICY_ID}.png`, fullPage: true });
+    await scrollAndCapture('coverage-risk-inquiry', 8, MAJOR_POLICY_ID);
     console.log('Coverage Risk Inquiry completed');
+
+    // ======================================================
+    // STEP 15: MAJOR POLICY CHANGE - COVERAGE RISK UPDATE
+    // Uses the same MAJOR_POLICY_ID.
+    // Screen submits Key Details, then captures Transaction Details.
+    // ======================================================
+    await clickSubMenuUnderMainMenu('Major Policy Change', 'Coverage Risk Update');
+    await waitForScreenTitle('Coverage Risk Update');
+    await fillPolicyIdOnScreen('Coverage Risk Update', MAJOR_POLICY_ID);
+
+    await page.screenshot({ path: `screenshots/coverage-risk-update-before-ok-${MAJOR_POLICY_ID}.png`, fullPage: true });
+    await clickOkFromAnyFrame('Coverage Risk Update');
+    await page.waitForTimeout(7000);
+    await page.screenshot({ path: `screenshots/coverage-risk-update-${MAJOR_POLICY_ID}.png`, fullPage: true });
+    await scrollAndCapture('coverage-risk-update', 8, MAJOR_POLICY_ID);
+    console.log('Coverage Risk Update completed');
 
     console.log('ALL FLOWS COMPLETED SUCCESSFULLY');
   } catch (e) {
