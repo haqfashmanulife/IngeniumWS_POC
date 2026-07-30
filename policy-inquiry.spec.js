@@ -7,15 +7,18 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
     const PASSWORD = process.env.APP_PASSWORD;
     const COMPANY = process.env.COMPANY || 'Manulife';
     const POLICY_ID = process.env.POLICY_ID;
+    const MAJOR_POLICY_ID = process.env.MAJOR_POLICY_ID || POLICY_ID;
 
     console.log('START TEST');
     console.log('BASE_URL:', BASE_URL);
     console.log('POLICY_ID:', POLICY_ID);
+    console.log('MAJOR_POLICY_ID:', MAJOR_POLICY_ID);
 
     expect(BASE_URL).toBeTruthy();
     expect(USERNAME).toBeTruthy();
     expect(PASSWORD).toBeTruthy();
     expect(POLICY_ID).toBeTruthy();
+    expect(MAJOR_POLICY_ID).toBeTruthy();
 
     // ======================================================
     // FRAME FINDER
@@ -29,7 +32,6 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
             }
           } catch {}
         }
-
         console.log(`Frame not ready (${i + 1}/${retries})`);
         await page.waitForTimeout(delay);
       }
@@ -38,7 +40,6 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
         path: 'screenshots/frame-error.png',
         fullPage: true
       });
-
       throw new Error('Frame not found');
     }
 
@@ -48,19 +49,11 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
     async function safeClick(locator, retries = 5) {
       for (let i = 0; i < retries; i++) {
         try {
-          await locator.first().waitFor({
-            state: 'visible',
-            timeout: 5000
-          });
-
-          await locator.first().click({
-            timeout: 5000
-          });
-
+          await locator.first().waitFor({ state: 'visible', timeout: 5000 });
+          await locator.first().click({ timeout: 5000 });
           return;
         } catch (e) {
           console.log(`Click retry ${i + 1}: ${e.message}`);
-
           try {
             const box = await locator.first().boundingBox();
             if (box) {
@@ -68,16 +61,11 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
               return;
             }
           } catch {}
-
           await page.waitForTimeout(2000);
         }
       }
 
-      await page.screenshot({
-        path: 'screenshots/click-error.png',
-        fullPage: true
-      });
-
+      await page.screenshot({ path: 'screenshots/click-error.png', fullPage: true });
       throw new Error('Failed to click element');
     }
 
@@ -106,10 +94,8 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
             try {
               const loc = makeLocator(f);
               const count = await loc.count();
-
               if (count > 0) {
                 const first = loc.first();
-
                 if (await first.isVisible().catch(() => false)) {
                   await first.click({ timeout: 5000 });
                   console.log(`Clicked OK using locator in frame: ${f.url()}`);
@@ -120,21 +106,14 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
             } catch {}
           }
         }
-
         console.log(`OK not ready yet (${attempt + 1}/8)`);
         await page.waitForTimeout(1500);
       }
 
-      // Final fallback: OK button is visually in bottom footer.
       console.log('OK selector not found, using footer coordinate fallback');
-
       const vp = page.viewportSize();
       if (vp) {
-        await page.mouse.click(
-          Math.floor(vp.width / 2) - 25,
-          Math.floor(vp.height) - 35
-        );
-
+        await page.mouse.click(Math.floor(vp.width / 2) - 25, Math.floor(vp.height) - 35);
         await page.waitForTimeout(5000);
         console.log('Clicked OK using footer coordinate fallback');
         return;
@@ -153,10 +132,31 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
         return await f.locator('a').filter({ hasText: menuText }).count() > 0;
       }, 15, 2000);
 
-      await safeClick(
-        menuFrame.locator('a').filter({ hasText: menuText })
-      );
+      await safeClick(menuFrame.locator('a').filter({ hasText: menuText }));
+      await page.waitForTimeout(5000);
+    }
 
+    // ======================================================
+    // CLICK MAIN MENU AND SUB MENU
+    // Used for Major Policy Change -> Coverage Risk Inquiry.
+    // ======================================================
+    async function clickMainMenuAndSubMenu(mainMenuTitle, subMenuText) {
+      console.log(`Opening main menu: ${mainMenuTitle}`);
+
+      const mainMenuFrame = await findFrame(page, async (f) => {
+        return await f.locator(`span[title="${mainMenuTitle}"]`).count() > 0;
+      }, 15, 2000);
+
+      await safeClick(mainMenuFrame.locator(`span[title="${mainMenuTitle}"]`));
+      await page.waitForTimeout(3000);
+
+      console.log(`Opening submenu: ${subMenuText}`);
+
+      const subMenuFrame = await findFrame(page, async (f) => {
+        return await f.locator('a').filter({ hasText: subMenuText }).count() > 0;
+      }, 15, 2000);
+
+      await safeClick(subMenuFrame.locator('a').filter({ hasText: subMenuText }));
       await page.waitForTimeout(5000);
     }
 
@@ -165,11 +165,9 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
     // ======================================================
     async function waitForScreenTitle(titleText) {
       console.log(`Waiting for screen title: ${titleText}`);
-
       await findFrame(page, async (f) => {
         return await f.locator(`text=${titleText}`).count() > 0;
       }, 15, 2000);
-
       console.log(`Screen title found: ${titleText}`);
     }
 
@@ -182,12 +180,8 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
       console.log(`Finding policy form frame for: ${screenName}`);
 
       const formFrame = await findFrame(page, async (f) => {
-        const hasPolicyLabel =
-          await f.locator('text=/Policy\\s*Id/i').count() > 0;
-
-        const visibleInputs =
-          await f.locator('input:visible').count() > 0;
-
+        const hasPolicyLabel = await f.locator('text=/Policy\\s*Id/i').count() > 0;
+        const visibleInputs = await f.locator('input:visible').count() > 0;
         return hasPolicyLabel && visibleInputs;
       }, 15, 2000);
 
@@ -197,55 +191,41 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
 
     // ======================================================
     // FILL POLICY ID ON CURRENT SCREEN
+    // Default keeps all existing flows using POLICY_ID.
+    // New Major Policy Change flow passes MAJOR_POLICY_ID.
     // ======================================================
-    async function fillPolicyIdOnScreen(screenName) {
+    async function fillPolicyIdOnScreen(screenName, policyId = POLICY_ID) {
       const formFrame = await findPolicyFormFrame(screenName);
-
       const policyInput = formFrame.locator('input:visible').first();
-
-      await policyInput.waitFor({
-        state: 'visible',
-        timeout: 10000
-      });
-
+      await policyInput.waitFor({ state: 'visible', timeout: 10000 });
       await policyInput.click();
-      await policyInput.fill(POLICY_ID, {
-        timeout: 10000
-      });
-
-      console.log(`Policy ID entered for ${screenName}: ${POLICY_ID}`);
-
+      await policyInput.fill(policyId, { timeout: 10000 });
+      console.log(`Policy ID entered for ${screenName}: ${policyId}`);
       return formFrame;
     }
 
     // ======================================================
     // SCROLL ALL FRAMES AND CAPTURE SCREENSHOTS
+    // Default keeps all existing screenshot names using POLICY_ID.
+    // New Major Policy Change flow passes MAJOR_POLICY_ID.
     // ======================================================
-    async function scrollAndCapture(prefix, count = 6) {
+    async function scrollAndCapture(prefix, count = 6, policyId = POLICY_ID) {
       console.log(`Capturing scroll screenshots: ${prefix}`);
 
       for (const f of page.frames()) {
-        try {
-          await f.evaluate(() => window.scrollTo(0, 0));
-        } catch {}
+        try { await f.evaluate(() => window.scrollTo(0, 0)); } catch {}
       }
-
       await page.waitForTimeout(1000);
 
       for (let i = 0; i < count; i++) {
         await page.screenshot({
-          path: `screenshots/${prefix}-${POLICY_ID}-${i + 1}.png`,
+          path: `screenshots/${prefix}-${policyId}-${i + 1}.png`,
           fullPage: true
         });
 
         for (const f of page.frames()) {
-          try {
-            await f.evaluate(() => {
-              window.scrollBy(0, window.innerHeight * 0.85);
-            });
-          } catch {}
+          try { await f.evaluate(() => { window.scrollBy(0, window.innerHeight * 0.85); }); } catch {}
         }
-
         await page.waitForTimeout(1500);
       }
 
@@ -255,27 +235,18 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
     // ======================================================
     // STEP 1: Launch
     // ======================================================
-    await page.goto(BASE_URL, {
-      waitUntil: 'domcontentloaded'
-    });
-
+    await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(5000);
-
-    await page.screenshot({
-      path: 'screenshots/01-launch.png',
-      fullPage: true
-    });
+    await page.screenshot({ path: 'screenshots/01-launch.png', fullPage: true });
 
     // ======================================================
     // STEP 2: English button
     // ======================================================
     const english = page.getByText('English Sign On');
-
     if (await english.isVisible().catch(() => false)) {
       await english.click();
       console.log('Clicked English Sign On');
     }
-
     await page.waitForTimeout(5000);
 
     // ======================================================
@@ -284,7 +255,6 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
     const loginFrame = await findFrame(page, async (f) => {
       return await f.locator('input[type="password"]').count() > 0;
     });
-
     console.log('Login frame found');
 
     // ======================================================
@@ -293,17 +263,10 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
     await loginFrame.locator('input[type="text"]').first().fill(USERNAME);
     await loginFrame.locator('input[type="password"]').fill(PASSWORD);
     await loginFrame.locator('select').selectOption({ label: COMPANY });
-
     await safeClick(loginFrame.getByRole('button', { name: /submit/i }));
-
     console.log('Login submitted');
-
     await page.waitForTimeout(5000);
-
-    await page.screenshot({
-      path: 'screenshots/02-after-login.png',
-      fullPage: true
-    });
+    await page.screenshot({ path: 'screenshots/02-after-login.png', fullPage: true });
 
     // ======================================================
     // STEP 5: OK POPUP AFTER LOGIN
@@ -312,11 +275,8 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
       const popupFrame = await findFrame(page, async (f) => {
         return await f.getByRole('button', { name: 'OK' }).count() > 0;
       }, 3, 2000);
-
       await safeClick(popupFrame.getByRole('button', { name: 'OK' }));
-
       console.log('Clicked OK popup');
-
       await page.waitForTimeout(8000);
     } catch {
       console.log('No popup');
@@ -328,20 +288,14 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
     const appFrame = await findFrame(page, async (f) => {
       return await f.locator('span[title="Policy Inquiry"]').count() > 0;
     });
-
     console.log('App frame ready');
 
     // ======================================================
     // STEP 7: EXISTING FLOW - POLICY INQUIRY ALL DETAILS
     // ======================================================
     await safeClick(appFrame.locator('span[title="Policy Inquiry"]'));
-
-    await safeClick(
-      appFrame.locator('a').filter({ hasText: 'Policy Inquiry - All Details' })
-    );
-
+    await safeClick(appFrame.locator('a').filter({ hasText: 'Policy Inquiry - All Details' }));
     console.log('Navigation successful');
-
     await page.waitForTimeout(5000);
 
     // ======================================================
@@ -351,11 +305,8 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
     const formFrame = await findFrame(page, async (f) => {
       return await f.locator('input').count() > 0;
     });
-
     await formFrame.locator('input').first().fill(POLICY_ID);
-
     console.log('Policy ID entered:', POLICY_ID);
-
     await page.waitForTimeout(3000);
 
     // ======================================================
@@ -365,23 +316,16 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
       const okFrame = await findFrame(page, async (f) => {
         return await f.getByRole('button', { name: 'OK' }).count() > 0;
       }, 5, 2000);
-
       await safeClick(okFrame.getByRole('button', { name: 'OK' }));
-
       console.log('Clicked OK after policy');
-
       await page.waitForTimeout(6000);
-
     } catch {
       console.log('OK not found in frame, fallback click');
-
       const vp = page.viewportSize();
       if (vp) {
         const x = Math.floor(vp.width / 2);
         const y = Math.floor(vp.height - 40);
-
         await page.mouse.click(x, y);
-
         console.log('OK clicked via fallback');
       }
     }
@@ -389,96 +333,69 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
     // ======================================================
     // STEP 10: FINAL SCREENSHOT - EXISTING FLOW
     // ======================================================
-    await page.screenshot({
-      path: `screenshots/policy-${POLICY_ID}.png`,
-      fullPage: true
-    });
-
+    await page.screenshot({ path: `screenshots/policy-${POLICY_ID}.png`, fullPage: true });
     console.log(`Screenshot saved: screenshots/policy-${POLICY_ID}.png`);
 
     // ======================================================
     // STEP 11: NEW FLOW - INQUIRY COVERAGE VALUES
     // ======================================================
     await clickLeftMenu('Inquiry - Coverage Values');
-
     await waitForScreenTitle('Inquiry - Coverage Values');
-
     await fillPolicyIdOnScreen('Inquiry - Coverage Values');
-
-    await page.screenshot({
-      path: `screenshots/coverage-values-before-ok-${POLICY_ID}.png`,
-      fullPage: true
-    });
-
+    await page.screenshot({ path: `screenshots/coverage-values-before-ok-${POLICY_ID}.png`, fullPage: true });
     await clickOkFromAnyFrame('Inquiry - Coverage Values');
-
     await page.waitForTimeout(6000);
-
-    await page.screenshot({
-      path: `screenshots/coverage-values-${POLICY_ID}.png`,
-      fullPage: true
-    });
-
+    await page.screenshot({ path: `screenshots/coverage-values-${POLICY_ID}.png`, fullPage: true });
     console.log('Coverage Values completed');
 
     // ======================================================
     // STEP 12: NEW FLOW - INQUIRY COVERAGE DETAILS
     // ======================================================
     await clickLeftMenu('Inquiry - Coverage Details');
-
     await waitForScreenTitle('Inquiry - Coverage Details');
-
     await fillPolicyIdOnScreen('Inquiry - Coverage Details');
-
-    await page.screenshot({
-      path: `screenshots/coverage-details-before-ok-${POLICY_ID}.png`,
-      fullPage: true
-    });
-
+    await page.screenshot({ path: `screenshots/coverage-details-before-ok-${POLICY_ID}.png`, fullPage: true });
     await clickOkFromAnyFrame('Inquiry - Coverage Details');
-
     await page.waitForTimeout(7000);
-
     await scrollAndCapture('coverage-details', 6);
-
     console.log('Coverage Details completed');
 
     // ======================================================
     // STEP 13: NEW FLOW - CALL CENTRE INFORMATION
     // ======================================================
     await clickLeftMenu('Inquiry - Call Centre Information');
-
     await waitForScreenTitle('Inquiry - Call Centre Information');
-
     await fillPolicyIdOnScreen('Inquiry - Call Centre Information');
-
-    await page.screenshot({
-      path: `screenshots/call-centre-before-ok-${POLICY_ID}.png`,
-      fullPage: true
-    });
-
+    await page.screenshot({ path: `screenshots/call-centre-before-ok-${POLICY_ID}.png`, fullPage: true });
     await clickOkFromAnyFrame('Inquiry - Call Centre Information');
-
     await page.waitForTimeout(7000);
-
     await scrollAndCapture('call-centre', 6);
-
     console.log('Call Centre Information completed');
 
-    console.log('ALL FLOWS COMPLETED SUCCESSFULLY');
+    // ======================================================
+    // STEP 14: NEW FLOW - MAJOR POLICY CHANGE / COVERAGE RISK INQUIRY
+    // Uses MAJOR_POLICY_ID fetched from TPOLL.
+    // Existing POLICY_ID flow remains unchanged.
+    // ======================================================
+    await clickMainMenuAndSubMenu('Major Policy Change', 'Coverage Risk Inquiry');
+    await waitForScreenTitle('Coverage Risk Inquiry');
+    await fillPolicyIdOnScreen('Coverage Risk Inquiry', MAJOR_POLICY_ID);
 
+    await page.screenshot({ path: `screenshots/coverage-risk-before-ok-${MAJOR_POLICY_ID}.png`, fullPage: true });
+    await clickOkFromAnyFrame('Coverage Risk Inquiry');
+    await page.waitForTimeout(7000);
+    await page.screenshot({ path: `screenshots/coverage-risk-${MAJOR_POLICY_ID}.png`, fullPage: true });
+    await scrollAndCapture('coverage-risk', 8, MAJOR_POLICY_ID);
+    console.log('Coverage Risk Inquiry completed');
+
+    console.log('ALL FLOWS COMPLETED SUCCESSFULLY');
   } catch (e) {
     console.error('TEST FAILURE:', e);
-
     try {
-      await page.screenshot({
-        path: 'screenshots/failure-final.png',
-        fullPage: true
-      });
+      await page.screenshot({ path: 'screenshots/failure-final.png', fullPage: true });
     } catch (screenshotError) {
       console.error('Could not capture failure screenshot:', screenshotError);
     }
-
     throw e;
   }
 });
