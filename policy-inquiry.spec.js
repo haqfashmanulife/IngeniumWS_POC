@@ -478,6 +478,13 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
     const SERVICE_AGENT_ID = await extractServiceAgentId();
     console.log('SERVICE_AGENT_ID:', SERVICE_AGENT_ID);
 
+    // Per the business flow, after the Policy Modification Update transaction
+    // details screen, click OK first. The Confirm screen appears only after OK.
+    await page.screenshot({ path: `screenshots/policy-modification-update-transaction-before-ok-${MAJOR_POLICY_ID}.png`, fullPage: true });
+    await clickOkFromAnyFrame('Policy Modification Update Transaction Details');
+    await page.waitForTimeout(7000);
+
+    await page.screenshot({ path: `screenshots/policy-modification-update-confirm-screen-${MAJOR_POLICY_ID}.png`, fullPage: true });
     await clickButtonFromAnyFrame('Confirm', 'Policy Modification Update Confirm');
     await page.waitForTimeout(7000);
     await page.screenshot({ path: `screenshots/policy-modification-update-confirm-${MAJOR_POLICY_ID}.png`, fullPage: true });
