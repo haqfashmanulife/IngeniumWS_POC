@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import fs from 'fs';
 
 test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
   try {
@@ -10,19 +11,19 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
     const COMPANY = process.env.COMPANY || 'Manulife';
     const POLICY_ID = process.env.POLICY_ID;
     const MAJOR_POLICY_ID = process.env.MAJOR_POLICY_ID || POLICY_ID;
-    const todayParts = new Intl.DateTimeFormat('en-CA', {
+    const previousDateParts = new Intl.DateTimeFormat('en-CA', {
       timeZone: 'Asia/Tokyo',
       year: 'numeric',
       month: '2-digit',
       day: '2-digit'
-    }).formatToParts(new Date());
-    const TODAY = `${todayParts.find(p => p.type === 'year').value}-${todayParts.find(p => p.type === 'month').value}-${todayParts.find(p => p.type === 'day').value}`;
+    }).formatToParts(new Date(Date.now() - 24 * 60 * 60 * 1000));
+    const EFFECTIVE_DATE = `${previousDateParts.find(p => p.type === 'year').value}-${previousDateParts.find(p => p.type === 'month').value}-${previousDateParts.find(p => p.type === 'day').value}`;
 
     console.log('START TEST');
     console.log('BASE_URL:', BASE_URL);
     console.log('POLICY_ID:', POLICY_ID);
     console.log('MAJOR_POLICY_ID:', MAJOR_POLICY_ID);
-    console.log('TODAY:', TODAY);
+    console.log('EFFECTIVE_DATE_PREVIOUS_DAY:', EFFECTIVE_DATE);
 
     expect(BASE_URL).toBeTruthy();
     expect(USERNAME).toBeTruthy();
@@ -199,12 +200,27 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
     async function fillPolicyIdAndEffectiveDate(screenName, policyId, effectiveDate) {
       const formFrame = await findPolicyFormFrame(screenName);
       const inputs = formFrame.locator('input:visible');
-      await expect.poll(async () => await inputs.count(), { timeout: 10000 }).toBeGreaterThanOrEqual(2);
-      await inputs.nth(0).click();
-      await inputs.nth(0).fill(policyId, { timeout: 10000 });
-      await inputs.nth(1).click();
-      await inputs.nth(1).fill(effectiveDate, { timeout: 10000 });
-      console.log(`Policy ID and Effective Date entered for ${screenName}: ${policyId}, ${effectiveDate}`);
+      await expect.poll(async () => await inputs.count(), { timeout: 10000 }).toBeGreaterThanOrEqual(3);
+
+      // Screen order is Policy Id, Suffix, Effective Date.
+      // Fill input #1 for Policy Id and input #3 for Effective Date.
+      const policyInput = inputs.nth(0);
+      const effectiveDateInput = inputs.nth(2);
+
+      await policyInput.click();
+      await policyInput.fill(policyId, { timeout: 10000 });
+      await effectiveDateInput.click();
+      await effectiveDateInput.fill(effectiveDate, { timeout: 10000 });
+
+      const enteredPolicyId = await policyInput.inputValue().catch(() => '');
+      const enteredEffectiveDate = await effectiveDateInput.inputValue().catch(() => '');
+      console.log(`Policy ID and Effective Date entered for ${screenName}: ${enteredPolicyId}, ${enteredEffectiveDate}`);
+
+      if (enteredEffectiveDate !== effectiveDate) {
+        await page.screenshot({ path: `screenshots/effective-date-fill-warning-${policyId}.png`, fullPage: true });
+        throw new Error(`Effective Date was not entered correctly for ${screenName}. Expected ${effectiveDate}, found ${enteredEffectiveDate}`);
+      }
+
       return formFrame;
     }
 
@@ -226,18 +242,34 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
         try {
           text += '\n' + await f.locator('body').innerText({ timeout: 3000 });
         } catch {}
+        try {
+          const inputDump = await f.locator('input').evaluateAll((inputs) =>
+            inputs.map((el, index) => `input[${index}] name=${el.name || ''} id=${el.id || ''} value=${el.value || ''}`).join('\n')
+          );
+          text += '\n' + inputDump;
+        } catch {}
+        try {
+          const selectDump = await f.locator('select').evaluateAll((selects) =>
+            selects.map((el, index) => `select[${index}] name=${el.name || ''} id=${el.id || ''} value=${el.value || ''}`).join('\n')
+          );
+          text += '\n' + selectDump;
+        } catch {}
       }
       return text;
     }
 
     async function extractServiceAgentId() {
       const text = await getAllFrameText();
+      fs.writeFileSync(`screenshots/policy-modification-update-page-text-${MAJOR_POLICY_ID}.txt`, text, 'utf8');
+
       const patterns = [
-        /Servicing\s+Agent\s+No\s*[:\-]?\s*(\d{4,})/i,
-        /Service\s+Agent\s+No\s*[:\-]?\s*(\d{4,})/i,
-        /Servicing\s+Agent\s+Number\s*[:\-]?\s*(\d{4,})/i,
-        /Agent\s+No\s*[:\-]?\s*(\d{4,})/i
+        /Servicing\s+Agent\s+(?:Id|ID|No|Number)?\s*[:\-]?\s*(\d{4,})/i,
+        /Service\s+Agent\s+(?:Id|ID|No|Number)?\s*[:\-]?\s*(\d{4,})/i,
+        /Agent\s+(?:Id|ID|No|Number)\s*[:\-]?\s*(\d{4,})/i,
+        /Servicing\s+Agent[\s\S]{0,120}?(\d{4,})/i,
+        /Service\s+Agent[\s\S]{0,120}?(\d{4,})/i
       ];
+
       for (const pattern of patterns) {
         const match = text.match(pattern);
         if (match?.[1]) {
@@ -245,25 +277,55 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
           return match[1];
         }
       }
+
+      const candidates = [...new Set((text.match(/\b\d{5,8}\b/g) || []))]
+        .filter(v => v !== POLICY_ID && v !== MAJOR_POLICY_ID);
+      fs.writeFileSync(`screenshots/service-agent-id-candidates-${MAJOR_POLICY_ID}.txt`, candidates.join('\n'), 'utf8');
+
       await page.screenshot({ path: `screenshots/service-agent-id-not-found-${MAJOR_POLICY_ID}.png`, fullPage: true });
-      throw new Error('Service Agent ID could not be extracted from Policy Modification Update Transaction Details');
+      throw new Error(`Service Agent ID could not be extracted. Check policy-modification-update-page-text-${MAJOR_POLICY_ID}.txt and service-agent-id-candidates-${MAJOR_POLICY_ID}.txt`);
     }
 
     async function scrollAndCapture(prefix, count = 6, policyId = POLICY_ID) {
       console.log(`Capturing scroll screenshots: ${prefix}`);
+
+      async function scrollState() {
+        const states = [];
+        for (const f of page.frames()) {
+          try {
+            const state = await f.evaluate(() => ({
+              x: window.scrollX,
+              y: window.scrollY,
+              h: document.documentElement.scrollHeight || document.body.scrollHeight,
+              wh: window.innerHeight
+            }));
+            states.push(JSON.stringify(state));
+          } catch {}
+        }
+        return states.join('|');
+      }
+
       for (const f of page.frames()) {
         try { await f.evaluate(() => window.scrollTo(0, 0)); } catch {}
       }
       await page.waitForTimeout(700);
+
       for (let i = 0; i < count; i++) {
         await page.screenshot({ path: `screenshots/${prefix}-${policyId}-${i + 1}.png`, fullPage: true });
+        const before = await scrollState();
         for (const f of page.frames()) {
           try { await f.evaluate(() => window.scrollBy(0, window.innerHeight * 0.85)); } catch {}
         }
         await page.waitForTimeout(900);
+        const after = await scrollState();
+        if (i > 0 && before === after) {
+          console.log(`Reached end of page for ${prefix} after ${i + 1} screenshot(s)`);
+          break;
+        }
       }
       console.log(`Completed screenshots for: ${prefix}`);
     }
+
 
     // STEP 1: Launch
     await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
@@ -396,7 +458,7 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
     // STEP 16: SAME MAJOR POLICY CHANGE - POLICY MODIFICATION INQUIRY
     await clickSubMenuUnderMainMenu('Major Policy Change', 'Policy Modification Inquiry');
     await waitForScreenTitle('Policy Modification Inquiry');
-    await fillPolicyIdAndEffectiveDate('Policy Modification Inquiry', MAJOR_POLICY_ID, TODAY);
+    await fillPolicyIdAndEffectiveDate('Policy Modification Inquiry', MAJOR_POLICY_ID, EFFECTIVE_DATE);
     await page.screenshot({ path: `screenshots/policy-modification-inquiry-before-ok-${MAJOR_POLICY_ID}.png`, fullPage: true });
     await clickOkFromAnyFrame('Policy Modification Inquiry');
     await page.waitForTimeout(7000);
@@ -407,7 +469,7 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
     // STEP 17: SAME MAJOR POLICY CHANGE - POLICY MODIFICATION UPDATE
     await clickSubMenuUnderMainMenu('Major Policy Change', 'Policy Modification Update');
     await waitForScreenTitle('Policy Modification Update');
-    await fillPolicyIdAndEffectiveDate('Policy Modification Update', MAJOR_POLICY_ID, TODAY);
+    await fillPolicyIdAndEffectiveDate('Policy Modification Update', MAJOR_POLICY_ID, EFFECTIVE_DATE);
     await page.screenshot({ path: `screenshots/policy-modification-update-before-ok-${MAJOR_POLICY_ID}.png`, fullPage: true });
     await clickOkFromAnyFrame('Policy Modification Update');
     await page.waitForTimeout(7000);
