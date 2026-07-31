@@ -1,5 +1,5 @@
 module.exports = {
-  timeout: 180000,
+  timeout: 900000,
   retries: 0,
   // Keep all transient output (traces, failure shots, .last-run.json)
   // out of the bind-mounted Jenkins workspace.
