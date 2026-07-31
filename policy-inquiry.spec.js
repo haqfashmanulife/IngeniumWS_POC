@@ -2,17 +2,27 @@ import { test, expect } from '@playwright/test';
 
 test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
   try {
+    test.setTimeout(900000);
+
     const BASE_URL = process.env.APP_URL;
     const USERNAME = process.env.APP_USERNAME;
     const PASSWORD = process.env.APP_PASSWORD;
     const COMPANY = process.env.COMPANY || 'Manulife';
     const POLICY_ID = process.env.POLICY_ID;
     const MAJOR_POLICY_ID = process.env.MAJOR_POLICY_ID || POLICY_ID;
+    const todayParts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Tokyo',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).formatToParts(new Date());
+    const TODAY = `${todayParts.find(p => p.type === 'year').value}-${todayParts.find(p => p.type === 'month').value}-${todayParts.find(p => p.type === 'day').value}`;
 
     console.log('START TEST');
     console.log('BASE_URL:', BASE_URL);
     console.log('POLICY_ID:', POLICY_ID);
     console.log('MAJOR_POLICY_ID:', MAJOR_POLICY_ID);
+    console.log('TODAY:', TODAY);
 
     expect(BASE_URL).toBeTruthy();
     expect(USERNAME).toBeTruthy();
@@ -20,32 +30,20 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
     expect(POLICY_ID).toBeTruthy();
     expect(MAJOR_POLICY_ID).toBeTruthy();
 
-    // ======================================================
-    // FRAME FINDER
-    // ======================================================
     async function findFrame(page, predicate, retries = 15, delay = 2000) {
       for (let i = 0; i < retries; i++) {
         for (const f of page.frames()) {
           try {
-            if (await predicate(f)) {
-              return f;
-            }
+            if (await predicate(f)) return f;
           } catch {}
         }
         console.log(`Frame not ready (${i + 1}/${retries})`);
         await page.waitForTimeout(delay);
       }
-
-      await page.screenshot({
-        path: 'screenshots/frame-error.png',
-        fullPage: true
-      });
+      await page.screenshot({ path: 'screenshots/frame-error.png', fullPage: true });
       throw new Error('Frame not found');
     }
 
-    // ======================================================
-    // SAFE CLICK
-    // ======================================================
     async function safeClick(locator, retries = 5) {
       for (let i = 0; i < retries; i++) {
         try {
@@ -64,28 +62,24 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
           await page.waitForTimeout(2000);
         }
       }
-
       await page.screenshot({ path: 'screenshots/click-error.png', fullPage: true });
       throw new Error('Failed to click element');
     }
 
-    // ======================================================
-    // CLICK OK FROM ANY FRAME / FOOTER
-    // Ingenium footer OK may be in a separate frame.
-    // ======================================================
-    async function clickOkFromAnyFrame(screenName = '') {
-      console.log(`Trying to click OK ${screenName ? 'for ' + screenName : ''}`);
-
+    async function clickButtonFromAnyFrame(buttonName, screenName = '') {
+      console.log(`Trying to click ${buttonName} ${screenName ? 'for ' + screenName : ''}`);
+      const escaped = buttonName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const exactRegex = new RegExp(`^${escaped}$`, 'i');
       const selectorFactories = [
-        (f) => f.getByRole('button', { name: /^OK$/i }),
-        (f) => f.locator('input[value="OK"]'),
-        (f) => f.locator('input[type="submit"][value="OK"]'),
-        (f) => f.locator('input[type="button"][value="OK"]'),
-        (f) => f.locator('input[type="image"][alt="OK"]'),
-        (f) => f.locator('img[alt="OK"]'),
-        (f) => f.locator('[title="OK"]'),
-        (f) => f.locator('a').filter({ hasText: /^OK$/i }),
-        (f) => f.locator('text=/^OK$/')
+        (f) => f.getByRole('button', { name: exactRegex }),
+        (f) => f.locator(`input[value="${buttonName}"]`),
+        (f) => f.locator(`input[type="submit"][value="${buttonName}"]`),
+        (f) => f.locator(`input[type="button"][value="${buttonName}"]`),
+        (f) => f.locator(`input[type="image"][alt="${buttonName}"]`),
+        (f) => f.locator(`img[alt="${buttonName}"]`),
+        (f) => f.locator(`[title="${buttonName}"]`),
+        (f) => f.locator('a').filter({ hasText: exactRegex }),
+        (f) => f.locator(`text=/^${escaped}$/i`)
       ];
 
       for (let attempt = 0; attempt < 8; attempt++) {
@@ -93,76 +87,86 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
           for (const makeLocator of selectorFactories) {
             try {
               const loc = makeLocator(f);
-              const count = await loc.count();
-              if (count > 0) {
-                const first = loc.first();
-                if (await first.isVisible().catch(() => false)) {
-                  await first.click({ timeout: 5000 });
-                  console.log(`Clicked OK using locator in frame: ${f.url()}`);
-                  await page.waitForTimeout(5000);
-                  return;
-                }
+              if ((await loc.count()) > 0 && await loc.first().isVisible().catch(() => false)) {
+                await loc.first().click({ timeout: 5000 });
+                console.log(`Clicked ${buttonName} using locator in frame: ${f.url()}`);
+                await page.waitForTimeout(5000);
+                return;
               }
             } catch {}
           }
         }
-        console.log(`OK not ready yet (${attempt + 1}/8)`);
+        console.log(`${buttonName} not ready yet (${attempt + 1}/8)`);
         await page.waitForTimeout(1500);
       }
 
-      console.log('OK selector not found, using footer coordinate fallback');
-      const vp = page.viewportSize();
-      if (vp) {
-        await page.mouse.click(Math.floor(vp.width / 2) - 25, Math.floor(vp.height) - 35);
-        await page.waitForTimeout(5000);
-        console.log('Clicked OK using footer coordinate fallback');
-        return;
+      if (/^OK$/i.test(buttonName)) {
+        console.log('OK selector not found, using footer coordinate fallback');
+        const vp = page.viewportSize();
+        if (vp) {
+          await page.mouse.click(Math.floor(vp.width / 2) - 25, Math.floor(vp.height) - 35);
+          await page.waitForTimeout(5000);
+          return;
+        }
       }
-
-      throw new Error('Could not click OK');
+      throw new Error(`Could not click ${buttonName}`);
     }
 
-    // ======================================================
-    // CLICK LEFT MENU ITEM
-    // ======================================================
+    async function clickOkFromAnyFrame(screenName = '') {
+      await clickButtonFromAnyFrame('OK', screenName);
+    }
+
+    async function clickCancelFromAnyFrame(screenName = '') {
+      await clickButtonFromAnyFrame('Cancel', screenName);
+    }
+
     async function clickLeftMenu(menuText) {
       console.log(`Opening menu: ${menuText}`);
-
       const menuFrame = await findFrame(page, async (f) => {
         return await f.locator('a').filter({ hasText: menuText }).count() > 0;
       }, 15, 2000);
-
       await safeClick(menuFrame.locator('a').filter({ hasText: menuText }));
       await page.waitForTimeout(5000);
     }
 
-    // ======================================================
-    // CLICK MAIN MENU AND SUB MENU
-    // Used for Major Policy Change -> Coverage Risk Inquiry.
-    // ======================================================
-    async function clickMainMenuAndSubMenu(mainMenuTitle, subMenuText) {
-      console.log(`Opening main menu: ${mainMenuTitle}`);
+    async function clickSubMenuUnderMainMenu(mainMenuTitle, subMenuText) {
+      console.log(`Opening submenu under ${mainMenuTitle}: ${subMenuText}`);
+      for (let directAttempt = 0; directAttempt < 3; directAttempt++) {
+        for (const f of page.frames()) {
+          try {
+            const subMenu = f.locator('a').filter({ hasText: subMenuText });
+            if ((await subMenu.count()) > 0 && await subMenu.first().isVisible().catch(() => false)) {
+              await safeClick(subMenu);
+              await page.waitForTimeout(5000);
+              console.log(`Clicked visible submenu directly: ${subMenuText}`);
+              return;
+            }
+          } catch {}
+        }
+        await page.waitForTimeout(1000);
+      }
 
+      console.log(`Submenu not visible yet. Opening main menu: ${mainMenuTitle}`);
       const mainMenuFrame = await findFrame(page, async (f) => {
-        return await f.locator(`span[title="${mainMenuTitle}"]`).count() > 0;
+        return await f.locator(`span[title="${mainMenuTitle}"]`).count() > 0 ||
+               await f.locator('a, span, div').filter({ hasText: new RegExp(`^${mainMenuTitle}$`, 'i') }).count() > 0;
       }, 15, 2000);
 
-      await safeClick(mainMenuFrame.locator(`span[title="${mainMenuTitle}"]`));
+      const titleLocator = mainMenuFrame.locator(`span[title="${mainMenuTitle}"]`);
+      if ((await titleLocator.count()) > 0) {
+        await safeClick(titleLocator);
+      } else {
+        await safeClick(mainMenuFrame.locator('a, span, div').filter({ hasText: new RegExp(`^${mainMenuTitle}$`, 'i') }));
+      }
       await page.waitForTimeout(3000);
-
-      console.log(`Opening submenu: ${subMenuText}`);
 
       const subMenuFrame = await findFrame(page, async (f) => {
         return await f.locator('a').filter({ hasText: subMenuText }).count() > 0;
       }, 15, 2000);
-
       await safeClick(subMenuFrame.locator('a').filter({ hasText: subMenuText }));
       await page.waitForTimeout(5000);
     }
 
-    // ======================================================
-    // WAIT FOR SCREEN TITLE
-    // ======================================================
     async function waitForScreenTitle(titleText) {
       console.log(`Waiting for screen title: ${titleText}`);
       await findFrame(page, async (f) => {
@@ -171,29 +175,17 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
       console.log(`Screen title found: ${titleText}`);
     }
 
-    // ======================================================
-    // FIND POLICY FORM FRAME
-    // Screen title and input are often in different frames.
-    // So find frame having visible Policy Id label + visible input.
-    // ======================================================
     async function findPolicyFormFrame(screenName) {
       console.log(`Finding policy form frame for: ${screenName}`);
-
       const formFrame = await findFrame(page, async (f) => {
         const hasPolicyLabel = await f.locator('text=/Policy\\s*Id/i').count() > 0;
         const visibleInputs = await f.locator('input:visible').count() > 0;
         return hasPolicyLabel && visibleInputs;
       }, 15, 2000);
-
       console.log(`Policy form frame found for: ${screenName}`);
       return formFrame;
     }
 
-    // ======================================================
-    // FILL POLICY ID ON CURRENT SCREEN
-    // Default keeps all existing flows using POLICY_ID.
-    // New Major Policy Change flow passes MAJOR_POLICY_ID.
-    // ======================================================
     async function fillPolicyIdOnScreen(screenName, policyId = POLICY_ID) {
       const formFrame = await findPolicyFormFrame(screenName);
       const policyInput = formFrame.locator('input:visible').first();
@@ -204,44 +196,81 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
       return formFrame;
     }
 
-    // ======================================================
-    // SCROLL ALL FRAMES AND CAPTURE SCREENSHOTS
-    // Default keeps all existing screenshot names using POLICY_ID.
-    // New Major Policy Change flow passes MAJOR_POLICY_ID.
-    // ======================================================
+    async function fillPolicyIdAndEffectiveDate(screenName, policyId, effectiveDate) {
+      const formFrame = await findPolicyFormFrame(screenName);
+      const inputs = formFrame.locator('input:visible');
+      await expect.poll(async () => await inputs.count(), { timeout: 10000 }).toBeGreaterThanOrEqual(2);
+      await inputs.nth(0).click();
+      await inputs.nth(0).fill(policyId, { timeout: 10000 });
+      await inputs.nth(1).click();
+      await inputs.nth(1).fill(effectiveDate, { timeout: 10000 });
+      console.log(`Policy ID and Effective Date entered for ${screenName}: ${policyId}, ${effectiveDate}`);
+      return formFrame;
+    }
+
+    async function fillSingleVisibleInput(screenName, value) {
+      console.log(`Filling single input for ${screenName}: ${value}`);
+      const formFrame = await findFrame(page, async (f) => {
+        return await f.locator('input:visible').count() > 0;
+      }, 15, 2000);
+      const input = formFrame.locator('input:visible').first();
+      await input.waitFor({ state: 'visible', timeout: 10000 });
+      await input.click();
+      await input.fill(value, { timeout: 10000 });
+      return formFrame;
+    }
+
+    async function getAllFrameText() {
+      let text = '';
+      for (const f of page.frames()) {
+        try {
+          text += '\n' + await f.locator('body').innerText({ timeout: 3000 });
+        } catch {}
+      }
+      return text;
+    }
+
+    async function extractServiceAgentId() {
+      const text = await getAllFrameText();
+      const patterns = [
+        /Servicing\s+Agent\s+No\s*[:\-]?\s*(\d{4,})/i,
+        /Service\s+Agent\s+No\s*[:\-]?\s*(\d{4,})/i,
+        /Servicing\s+Agent\s+Number\s*[:\-]?\s*(\d{4,})/i,
+        /Agent\s+No\s*[:\-]?\s*(\d{4,})/i
+      ];
+      for (const pattern of patterns) {
+        const match = text.match(pattern);
+        if (match?.[1]) {
+          console.log(`Extracted Service Agent ID: ${match[1]}`);
+          return match[1];
+        }
+      }
+      await page.screenshot({ path: `screenshots/service-agent-id-not-found-${MAJOR_POLICY_ID}.png`, fullPage: true });
+      throw new Error('Service Agent ID could not be extracted from Policy Modification Update Transaction Details');
+    }
+
     async function scrollAndCapture(prefix, count = 6, policyId = POLICY_ID) {
       console.log(`Capturing scroll screenshots: ${prefix}`);
-
       for (const f of page.frames()) {
         try { await f.evaluate(() => window.scrollTo(0, 0)); } catch {}
       }
-      await page.waitForTimeout(1000);
-
+      await page.waitForTimeout(700);
       for (let i = 0; i < count; i++) {
-        await page.screenshot({
-          path: `screenshots/${prefix}-${policyId}-${i + 1}.png`,
-          fullPage: true
-        });
-
+        await page.screenshot({ path: `screenshots/${prefix}-${policyId}-${i + 1}.png`, fullPage: true });
         for (const f of page.frames()) {
-          try { await f.evaluate(() => { window.scrollBy(0, window.innerHeight * 0.85); }); } catch {}
+          try { await f.evaluate(() => window.scrollBy(0, window.innerHeight * 0.85)); } catch {}
         }
-        await page.waitForTimeout(1500);
+        await page.waitForTimeout(900);
       }
-
       console.log(`Completed screenshots for: ${prefix}`);
     }
 
-    // ======================================================
     // STEP 1: Launch
-    // ======================================================
     await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(5000);
     await page.screenshot({ path: 'screenshots/01-launch.png', fullPage: true });
 
-    // ======================================================
     // STEP 2: English button
-    // ======================================================
     const english = page.getByText('English Sign On');
     if (await english.isVisible().catch(() => false)) {
       await english.click();
@@ -249,17 +278,13 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
     }
     await page.waitForTimeout(5000);
 
-    // ======================================================
     // STEP 3: LOGIN FRAME
-    // ======================================================
     const loginFrame = await findFrame(page, async (f) => {
       return await f.locator('input[type="password"]').count() > 0;
     });
     console.log('Login frame found');
 
-    // ======================================================
     // STEP 4: LOGIN
-    // ======================================================
     await loginFrame.locator('input[type="text"]').first().fill(USERNAME);
     await loginFrame.locator('input[type="password"]').fill(PASSWORD);
     await loginFrame.locator('select').selectOption({ label: COMPANY });
@@ -268,9 +293,7 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
     await page.waitForTimeout(5000);
     await page.screenshot({ path: 'screenshots/02-after-login.png', fullPage: true });
 
-    // ======================================================
     // STEP 5: OK POPUP AFTER LOGIN
-    // ======================================================
     try {
       const popupFrame = await findFrame(page, async (f) => {
         return await f.getByRole('button', { name: 'OK' }).count() > 0;
@@ -282,36 +305,25 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
       console.log('No popup');
     }
 
-    // ======================================================
     // STEP 6: APP FRAME
-    // ======================================================
     const appFrame = await findFrame(page, async (f) => {
       return await f.locator('span[title="Policy Inquiry"]').count() > 0;
     });
     console.log('App frame ready');
 
-    // ======================================================
     // STEP 7: EXISTING FLOW - POLICY INQUIRY ALL DETAILS
-    // ======================================================
     await safeClick(appFrame.locator('span[title="Policy Inquiry"]'));
     await safeClick(appFrame.locator('a').filter({ hasText: 'Policy Inquiry - All Details' }));
     console.log('Navigation successful');
     await page.waitForTimeout(5000);
 
-    // ======================================================
-    // STEP 8: FORM FRAME
-    // Existing logic preserved.
-    // ======================================================
-    const formFrame = await findFrame(page, async (f) => {
-      return await f.locator('input').count() > 0;
-    });
+    // STEP 8: EXISTING FORM FRAME
+    const formFrame = await findFrame(page, async (f) => await f.locator('input').count() > 0);
     await formFrame.locator('input').first().fill(POLICY_ID);
     console.log('Policy ID entered:', POLICY_ID);
     await page.waitForTimeout(3000);
 
-    // ======================================================
     // STEP 9: EXISTING OK LOGIC
-    // ======================================================
     try {
       const okFrame = await findFrame(page, async (f) => {
         return await f.getByRole('button', { name: 'OK' }).count() > 0;
@@ -322,23 +334,14 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
     } catch {
       console.log('OK not found in frame, fallback click');
       const vp = page.viewportSize();
-      if (vp) {
-        const x = Math.floor(vp.width / 2);
-        const y = Math.floor(vp.height - 40);
-        await page.mouse.click(x, y);
-        console.log('OK clicked via fallback');
-      }
+      if (vp) await page.mouse.click(Math.floor(vp.width / 2), Math.floor(vp.height - 40));
     }
 
-    // ======================================================
     // STEP 10: FINAL SCREENSHOT - EXISTING FLOW
-    // ======================================================
     await page.screenshot({ path: `screenshots/policy-${POLICY_ID}.png`, fullPage: true });
     console.log(`Screenshot saved: screenshots/policy-${POLICY_ID}.png`);
 
-    // ======================================================
-    // STEP 11: NEW FLOW - INQUIRY COVERAGE VALUES
-    // ======================================================
+    // STEP 11: INQUIRY COVERAGE VALUES
     await clickLeftMenu('Inquiry - Coverage Values');
     await waitForScreenTitle('Inquiry - Coverage Values');
     await fillPolicyIdOnScreen('Inquiry - Coverage Values');
@@ -348,9 +351,7 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
     await page.screenshot({ path: `screenshots/coverage-values-${POLICY_ID}.png`, fullPage: true });
     console.log('Coverage Values completed');
 
-    // ======================================================
-    // STEP 12: NEW FLOW - INQUIRY COVERAGE DETAILS
-    // ======================================================
+    // STEP 12: INQUIRY COVERAGE DETAILS
     await clickLeftMenu('Inquiry - Coverage Details');
     await waitForScreenTitle('Inquiry - Coverage Details');
     await fillPolicyIdOnScreen('Inquiry - Coverage Details');
@@ -360,9 +361,7 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
     await scrollAndCapture('coverage-details', 6);
     console.log('Coverage Details completed');
 
-    // ======================================================
-    // STEP 13: NEW FLOW - CALL CENTRE INFORMATION
-    // ======================================================
+    // STEP 13: CALL CENTRE INFORMATION
     await clickLeftMenu('Inquiry - Call Centre Information');
     await waitForScreenTitle('Inquiry - Call Centre Information');
     await fillPolicyIdOnScreen('Inquiry - Call Centre Information');
@@ -372,21 +371,89 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
     await scrollAndCapture('call-centre', 6);
     console.log('Call Centre Information completed');
 
-    // ======================================================
-    // STEP 14: NEW FLOW - MAJOR POLICY CHANGE / COVERAGE RISK INQUIRY
-    // Uses MAJOR_POLICY_ID fetched from TPOLL.
-    // Existing POLICY_ID flow remains unchanged.
-    // ======================================================
-    await clickMainMenuAndSubMenu('Major Policy Change', 'Coverage Risk Inquiry');
+    // STEP 14: MAJOR POLICY CHANGE - COVERAGE RISK INQUIRY
+    await clickSubMenuUnderMainMenu('Major Policy Change', 'Coverage Risk Inquiry');
     await waitForScreenTitle('Coverage Risk Inquiry');
     await fillPolicyIdOnScreen('Coverage Risk Inquiry', MAJOR_POLICY_ID);
-
-    await page.screenshot({ path: `screenshots/coverage-risk-before-ok-${MAJOR_POLICY_ID}.png`, fullPage: true });
+    await page.screenshot({ path: `screenshots/coverage-risk-inquiry-before-ok-${MAJOR_POLICY_ID}.png`, fullPage: true });
     await clickOkFromAnyFrame('Coverage Risk Inquiry');
     await page.waitForTimeout(7000);
-    await page.screenshot({ path: `screenshots/coverage-risk-${MAJOR_POLICY_ID}.png`, fullPage: true });
-    await scrollAndCapture('coverage-risk', 8, MAJOR_POLICY_ID);
+    await page.screenshot({ path: `screenshots/coverage-risk-inquiry-${MAJOR_POLICY_ID}.png`, fullPage: true });
+    await scrollAndCapture('coverage-risk-inquiry', 8, MAJOR_POLICY_ID);
     console.log('Coverage Risk Inquiry completed');
+
+    // STEP 15: MAJOR POLICY CHANGE - COVERAGE RISK UPDATE
+    await clickSubMenuUnderMainMenu('Major Policy Change', 'Coverage Risk Update');
+    await waitForScreenTitle('Coverage Risk Update');
+    await fillPolicyIdOnScreen('Coverage Risk Update', MAJOR_POLICY_ID);
+    await page.screenshot({ path: `screenshots/coverage-risk-update-before-ok-${MAJOR_POLICY_ID}.png`, fullPage: true });
+    await clickOkFromAnyFrame('Coverage Risk Update');
+    await page.waitForTimeout(7000);
+    await page.screenshot({ path: `screenshots/coverage-risk-update-${MAJOR_POLICY_ID}.png`, fullPage: true });
+    await scrollAndCapture('coverage-risk-update', 8, MAJOR_POLICY_ID);
+    console.log('Coverage Risk Update completed');
+
+    // STEP 16: SAME MAJOR POLICY CHANGE - POLICY MODIFICATION INQUIRY
+    await clickSubMenuUnderMainMenu('Major Policy Change', 'Policy Modification Inquiry');
+    await waitForScreenTitle('Policy Modification Inquiry');
+    await fillPolicyIdAndEffectiveDate('Policy Modification Inquiry', MAJOR_POLICY_ID, TODAY);
+    await page.screenshot({ path: `screenshots/policy-modification-inquiry-before-ok-${MAJOR_POLICY_ID}.png`, fullPage: true });
+    await clickOkFromAnyFrame('Policy Modification Inquiry');
+    await page.waitForTimeout(7000);
+    await scrollAndCapture('policy-modification-inquiry', 8, MAJOR_POLICY_ID);
+    await clickOkFromAnyFrame('Policy Modification Inquiry Result');
+    console.log('Policy Modification Inquiry completed');
+
+    // STEP 17: SAME MAJOR POLICY CHANGE - POLICY MODIFICATION UPDATE
+    await clickSubMenuUnderMainMenu('Major Policy Change', 'Policy Modification Update');
+    await waitForScreenTitle('Policy Modification Update');
+    await fillPolicyIdAndEffectiveDate('Policy Modification Update', MAJOR_POLICY_ID, TODAY);
+    await page.screenshot({ path: `screenshots/policy-modification-update-before-ok-${MAJOR_POLICY_ID}.png`, fullPage: true });
+    await clickOkFromAnyFrame('Policy Modification Update');
+    await page.waitForTimeout(7000);
+    await scrollAndCapture('policy-modification-update-transaction', 8, MAJOR_POLICY_ID);
+
+    const SERVICE_AGENT_ID = await extractServiceAgentId();
+    console.log('SERVICE_AGENT_ID:', SERVICE_AGENT_ID);
+
+    await clickButtonFromAnyFrame('Confirm', 'Policy Modification Update Confirm');
+    await page.waitForTimeout(7000);
+    await page.screenshot({ path: `screenshots/policy-modification-update-confirm-${MAJOR_POLICY_ID}.png`, fullPage: true });
+    await scrollAndCapture('policy-modification-update-confirm', 4, MAJOR_POLICY_ID);
+    console.log('Policy Modification Update completed');
+
+    // STEP 18: AGENT - AGENT UPDATE
+    await clickSubMenuUnderMainMenu('Agent', 'Agent Update');
+    await waitForScreenTitle('Agent Update');
+    await fillSingleVisibleInput('Agent Update', SERVICE_AGENT_ID);
+    await page.screenshot({ path: `screenshots/agent-update-before-ok-${SERVICE_AGENT_ID}.png`, fullPage: true });
+    await clickOkFromAnyFrame('Agent Update');
+    await page.waitForTimeout(7000);
+    await scrollAndCapture('agent-update', 8, SERVICE_AGENT_ID);
+    await clickOkFromAnyFrame('Agent Update Result');
+    console.log('Agent Update completed');
+
+    // STEP 19: AGENT - AGENT LIST
+    await clickSubMenuUnderMainMenu('Agent', 'Agent List');
+    await waitForScreenTitle('Agent List');
+    await fillSingleVisibleInput('Agent List', SERVICE_AGENT_ID);
+    await page.screenshot({ path: `screenshots/agent-list-before-ok-${SERVICE_AGENT_ID}.png`, fullPage: true });
+    await clickOkFromAnyFrame('Agent List');
+    await page.waitForTimeout(7000);
+    await page.screenshot({ path: `screenshots/agent-list-${SERVICE_AGENT_ID}.png`, fullPage: true });
+    await clickCancelFromAnyFrame('Agent List Result');
+    console.log('Agent List completed');
+
+    // STEP 20: AGENT - AGENT INQUIRY
+    await clickSubMenuUnderMainMenu('Agent', 'Agent Inquiry');
+    await waitForScreenTitle('Agent Inquiry');
+    await fillSingleVisibleInput('Agent Inquiry', SERVICE_AGENT_ID);
+    await page.screenshot({ path: `screenshots/agent-inquiry-before-ok-${SERVICE_AGENT_ID}.png`, fullPage: true });
+    await clickOkFromAnyFrame('Agent Inquiry');
+    await page.waitForTimeout(7000);
+    await scrollAndCapture('agent-inquiry', 8, SERVICE_AGENT_ID);
+    await clickOkFromAnyFrame('Agent Inquiry Result');
+    console.log('Agent Inquiry completed');
 
     console.log('ALL FLOWS COMPLETED SUCCESSFULLY');
   } catch (e) {
