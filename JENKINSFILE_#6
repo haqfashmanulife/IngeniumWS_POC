@@ -15,7 +15,7 @@ pipeline {
 
         APP_URL      = 'https://azlapdnpingjp01.mfcgd.com:9446/ingenium/'
         COMPANY      = 'Manulife'
-        APP_PASSWORD = 'ingenium'
+        APP_PASSWORD = ''
 
         EMAIL_TO = 'fashul_haq@manulife.com'
     }
