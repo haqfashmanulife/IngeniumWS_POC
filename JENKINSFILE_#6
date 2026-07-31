@@ -1,0 +1,287 @@
+pipeline {
+
+    agent none
+
+    environment {
+        GIT_REPO   = 'https://github.com/haqfashmanulife/IngeniumWS_POC.git'
+        GIT_BRANCH = 'Feature'
+        GIT_CRED   = 'github-jenkins-haqfash'
+
+        WORK_DIR   = 'ingenium-ui-automation'
+
+        SSH_HOST   = 'azldbdnpingjp01.mfcgd.com'
+        SSH_USER   = 'ingmt1s'
+        SSH_CRED   = 'ssh-cred-ingmt1s'
+
+        APP_URL      = 'https://azlapdnpingjp01.mfcgd.com:9446/ingenium/'
+        COMPANY      = 'Manulife'
+        APP_PASSWORD = 'ingenium'
+
+        EMAIL_TO = 'fashul_haq@manulife.com'
+    }
+
+    parameters {
+        string(name: 'APP_USERNAME',       defaultValue: 'gocc')
+        string(name: 'OVERRIDE_POLICY_ID', defaultValue: '')
+    }
+
+    stages {
+
+        stage('Prepare Workspace') {
+            agent { label 'Medium' }
+
+            steps {
+                echo '🧹 Cleaning workspace (critical fix)'
+                deleteDir()
+
+                echo '📥 Checking out latest code'
+                checkout([
+                  $class: 'GitSCM',
+                  branches: [[name: "*/${GIT_BRANCH}"]],
+                  userRemoteConfigs: [[
+                    url: "${GIT_REPO}",
+                    credentialsId: "${GIT_CRED}"
+                  ]]
+                ])
+
+                sh '''
+                  set -e
+                  rm -rf ${WORK_DIR}/tests
+                  mkdir -p ${WORK_DIR}/tests ${WORK_DIR}/screenshots
+
+                  cp -f playwright.config.js ${WORK_DIR}/playwright.config.js
+                  cp -f policy-inquiry.spec.js ${WORK_DIR}/tests/policy-inquiry.spec.js
+
+                  echo "===== VERIFY TEST FILE CONTENT ====="
+                  cat ${WORK_DIR}/tests/policy-inquiry.spec.js
+
+                  echo "===== GUARD: ensure frame-based spec ====="
+                  if grep -q "page.fill('input" ${WORK_DIR}/tests/policy-inquiry.spec.js; then
+                    echo "❌ STALE SPEC DETECTED (top-level page.fill). Aborting."; exit 1
+                  fi
+                  if ! grep -q "loginFrame.locator" ${WORK_DIR}/tests/policy-inquiry.spec.js; then
+                    echo "❌ Frame-based login logic not found. Aborting."; exit 1
+                  fi
+                  echo "✅ Correct frame-based spec confirmed."
+                '''
+
+                dir("${WORK_DIR}") {
+                    stash name: 'spec',   includes: 'tests/policy-inquiry.spec.js'
+                    stash name: 'config', includes: 'playwright.config.js'
+                }
+            }
+        }
+
+        stage('Fetch Policy ID from DB2') {
+            agent { label 'Medium' }
+
+            steps {
+                sshagent(credentials: [env.SSH_CRED]) {
+                    script {
+                        def output = sh(
+                            script: '''
+ssh -o StrictHostKeyChecking=no ${SSH_USER}@${SSH_HOST} 'bash -s' << 'EOF'
+cd /apps/ingenium/t1/server
+db2 connect to ingmt1
+db2 set schema ingmt1s
+db2 "select POL_ID from TPOL fetch first 1 rows only with ur"
+EOF
+''',
+                            returnStdout: true
+                        )
+
+                        echo "Raw DB2 output:"
+                        echo output
+
+                        env.POLICY_ID = output
+                            .readLines()
+                            .collect { it.trim() }
+                            .find { it ==~ /^[0-9]{5,}$/ }
+
+                        if (params.OVERRIDE_POLICY_ID?.trim()) {
+                            env.POLICY_ID = params.OVERRIDE_POLICY_ID.trim()
+                            echo "Using manual POLICY_ID: ${env.POLICY_ID}"
+                        }
+
+                        if (!env.POLICY_ID) {
+                            error '❌ POLICY_ID could not be determined'
+                        }
+
+                        echo "✅ Selected POLICY_ID: ${env.POLICY_ID}"
+                    }
+                }
+            }
+        }
+
+        stage('Fetch Major Policy Change Policy ID from DB2') {
+            agent { label 'Medium' }
+
+            steps {
+                sshagent(credentials: [env.SSH_CRED]) {
+                    script {
+                        def output = sh(
+                            script: '''
+ssh -o StrictHostKeyChecking=no ${SSH_USER}@${SSH_HOST} 'bash -s' << 'EOF'
+cd /apps/ingenium/t1/server
+db2 connect to ingmt1
+db2 set schema ingmt1s
+db2 "SELECT POL_ID FROM TPOLL WHERE CO_ID='CP' AND POL_LOAN_ID='A' AND LOAN_AMT>'0' LIMIT 1"
+EOF
+''',
+                            returnStdout: true
+                        )
+
+                        echo "Raw DB2 output for Major Policy Change:"
+                        echo output
+
+                        env.MAJOR_POLICY_ID = output
+                            .readLines()
+                            .collect { it.trim() }
+                            .find { it ==~ /^[0-9]{5,}$/ }
+
+                        if (!env.MAJOR_POLICY_ID) {
+                            error '❌ MAJOR_POLICY_ID could not be determined'
+                        }
+
+                        echo "✅ Selected MAJOR_POLICY_ID: ${env.MAJOR_POLICY_ID}"
+                    }
+                }
+            }
+        }
+
+        stage('Run Playwright UI Automation') {
+            agent {
+                docker {
+                    image 'mcr.microsoft.com/playwright:v1.43.0-jammy'
+                    label 'Medium'
+                    args  '--network host -u 9001:9001 -e HOME=/tmp/pwhome'
+                }
+            }
+
+            options {
+                timeout(time: 15, unit: 'MINUTES')
+            }
+
+            steps {
+
+                sh 'rm -rf .src && mkdir -p .src'
+                dir('.src') {
+                    unstash 'spec'
+                    unstash 'config'
+                }
+
+                sh '''
+                  set -e
+
+                  RUN_DIR=/tmp/pwrun
+                  export HOME=/tmp/pwhome
+                  rm -rf "$RUN_DIR"
+                  mkdir -p "$HOME" "$RUN_DIR/tests" "$RUN_DIR/screenshots" "$RUN_DIR/test-results"
+
+                  cp -f "${WORKSPACE}/.src/playwright.config.js" "$RUN_DIR/playwright.config.js"
+                  cp -f "${WORKSPACE}/.src/tests/policy-inquiry.spec.js" "$RUN_DIR/tests/policy-inquiry.spec.js"
+
+                  cd "$RUN_DIR"
+
+                  npm init -y >/dev/null 2>&1
+                  npm install -D @playwright/test
+                  npx playwright install chromium
+
+                  export APP_URL="${APP_URL}"
+                  export COMPANY="${COMPANY}"
+                  export APP_USERNAME="${APP_USERNAME}"
+                  export APP_PASSWORD="${APP_PASSWORD}"
+                  export POLICY_ID="${POLICY_ID}"
+                  export MAJOR_POLICY_ID="${MAJOR_POLICY_ID}"
+
+                  set +e
+                  npx playwright test tests/policy-inquiry.spec.js --output="$RUN_DIR/test-results"
+                  TEST_RC=$?
+                  set -e
+
+                  DEST="${WORKSPACE}/.shots"
+                  rm -rf "$DEST"; mkdir -p "$DEST"
+                  cp -f "$RUN_DIR"/screenshots/*.png "$DEST/" 2>/dev/null || true
+                  for f in $(find "$RUN_DIR/test-results" -name "*.png" 2>/dev/null); do
+                    cp -f "$f" "$DEST/" 2>/dev/null || true
+                  done
+
+                  echo "Test exit code: $TEST_RC"
+                  exit $TEST_RC
+                '''
+            }
+
+            post {
+                always {
+                    dir('.shots') {
+                        stash name: 'screenshots',
+                              includes: '*.png',
+                              allowEmpty: true
+                    }
+                }
+            }
+        }
+    }
+
+    /* ===================================================== */
+    post {
+
+        always {
+            node('Medium') {
+
+                // ✅ ✅ FIX ADDED HERE (DO NOT CHANGE LOGIC)
+                sh '''
+                  echo "🔧 Fixing permissions before cleanup..."
+                  chmod -R 777 ${WORKSPACE} || true
+                '''
+
+                deleteDir()
+
+                dir('shots') {
+                    script {
+                        try {
+                            unstash 'screenshots'
+                        } catch (err) {
+                            echo "No screenshots stash available: ${err}"
+                        }
+                    }
+                }
+
+                archiveArtifacts artifacts: 'shots/*.png',
+                                 allowEmptyArchive: true
+            }
+        }
+
+        success {
+            node('Medium') {
+                dir('shots') {
+                    script {
+                        try { unstash 'screenshots' } catch (err) { echo "no shots: ${err}" }
+                    }
+                }
+                emailext(
+                    subject: "✅ Ingenium Policy Inquiry SUCCESS",
+                    body: "Policy ID: ${env.POLICY_ID}\nMajor Policy Change Policy ID: ${env.MAJOR_POLICY_ID}",
+                    to: "${EMAIL_TO}",
+                    attachmentsPattern: "shots/*.png"
+                )
+            }
+        }
+
+        failure {
+            node('Medium') {
+                dir('shots') {
+                    script {
+                        try { unstash 'screenshots' } catch (err) { echo "no shots: ${err}" }
+                    }
+                }
+                emailext(
+                    subject: "❌ Ingenium Policy Inquiry FAILED",
+                    body: "Check Jenkins logs + screenshots\nPolicy ID: ${env.POLICY_ID}\nMajor Policy Change Policy ID: ${env.MAJOR_POLICY_ID}",
+                    to: "${EMAIL_TO}",
+                    attachmentsPattern: "shots/*.png"
+                )
+            }
+        }
+    }
+}
