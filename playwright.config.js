@@ -32,7 +32,9 @@ export default defineConfig({
       args: [
         '--auth-server-allowlist=azlapdnpingjp01.mfcgd.com',
         '--auth-negotiate-delegate-allowlist=azlapdnpingjp01.mfcgd.com',
-        '--enable-auth-negotiate-port'
+        '--enable-auth-negotiate-port',
+        '--no-sandbox',
+        '--disable-dev-shm-usage'
       ]
     },
 
