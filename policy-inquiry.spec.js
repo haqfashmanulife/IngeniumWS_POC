@@ -6,9 +6,6 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
     test.setTimeout(900000);
 
     const BASE_URL = process.env.APP_URL;
-    const USERNAME = process.env.APP_USERNAME;
-    const PASSWORD = process.env.APP_PASSWORD;
-    const COMPANY = process.env.COMPANY || 'Manulife';
     const POLICY_ID = process.env.POLICY_ID;
     const MAJOR_POLICY_ID = process.env.MAJOR_POLICY_ID || POLICY_ID;
     const previousDateParts = new Intl.DateTimeFormat('en-CA', {
@@ -26,8 +23,6 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
     console.log('EFFECTIVE_DATE_PREVIOUS_DAY:', EFFECTIVE_DATE);
 
     expect(BASE_URL).toBeTruthy();
-    expect(USERNAME).toBeTruthy();
-    expect(PASSWORD).toBeTruthy();
     expect(POLICY_ID).toBeTruthy();
     expect(MAJOR_POLICY_ID).toBeTruthy();
 
@@ -340,34 +335,22 @@ test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
     }
     await page.waitForTimeout(5000);
 
-    // STEP 3: LOGIN FRAME
-    const loginFrame = await findFrame(page, async (f) => {
-      return await f.locator('input[type="password"]').count() > 0;
-    });
-    console.log('Login frame found');
-
-    // STEP 4: LOGIN
-    await loginFrame.locator('input[type="text"]').first().fill(USERNAME);
-    await loginFrame.locator('input[type="password"]').fill(PASSWORD);
-    await loginFrame.locator('select').selectOption({ label: COMPANY });
-    await safeClick(loginFrame.getByRole('button', { name: /submit/i }));
-    console.log('Login submitted');
-    await page.waitForTimeout(5000);
-    await page.screenshot({ path: 'screenshots/02-after-login.png', fullPage: true });
-
-    // STEP 5: OK POPUP AFTER LOGIN
+    // STEP 3: OK POPUP AFTER ENGLISH SIGN ON
+    // U2 SSO uses browser-level authentication handled by httpCredentials.
+    // After English Sign On, click OK and continue to the existing Ingenium flow.
     try {
       const popupFrame = await findFrame(page, async (f) => {
-        return await f.getByRole('button', { name: 'OK' }).count() > 0;
-      }, 3, 2000);
-      await safeClick(popupFrame.getByRole('button', { name: 'OK' }));
-      console.log('Clicked OK popup');
+        return await f.getByRole('button', { name: /^OK$/i }).count() > 0;
+      }, 8, 2000);
+      await safeClick(popupFrame.getByRole('button', { name: /^OK$/i }));
+      console.log('Clicked OK popup after English Sign On');
       await page.waitForTimeout(8000);
     } catch {
-      console.log('No popup');
+      console.log('No OK popup after English Sign On');
     }
+    await page.screenshot({ path: 'screenshots/02-after-u2-sso-ok.png', fullPage: true });
 
-    // STEP 6: APP FRAME
+    // STEP 4: APP FRAME
     const appFrame = await findFrame(page, async (f) => {
       return await f.locator('span[title="Policy Inquiry"]').count() > 0;
     });
