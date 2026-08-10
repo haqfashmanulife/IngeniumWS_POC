@@ -7,6 +7,10 @@ const usernameForHttp = rawUsername.includes('\\') || rawUsername.includes('@')
   ? rawUsername
   : `${domain}\\${rawUsername}`;
 
+// Chromium/Edge integrated-auth allowlist syntax on Linux expects patterns like *example.com.
+// The U2 launch page may redirect to another mfcgd.com SSO endpoint, so allow the whole internal domain.
+const spnegoAllowlist = '*mfcgd.com,azlapdnpingjp01.mfcgd.com';
+
 export default defineConfig({
   timeout: 180000,
 
@@ -20,18 +24,22 @@ export default defineConfig({
     headless: true,
     ignoreHTTPSErrors: true,
 
-    // If the server falls back to Basic/NTLM-style username-password auth,
-    // send the manager-suggested domain-qualified user, for example MFCGD\\haqfash.
-    // For true SPNEGO/Kerberos, the kinit ticket from Jenkinsfile is the primary auth mechanism.
+    // Fallback only. Real SPNEGO uses the Kerberos ticket created by kinit in Jenkinsfile.
     httpCredentials: rawUsername && password ? {
       username: usernameForHttp,
       password
     } : undefined,
 
+    // Some IWA/SPNEGO products gate support by browser family. Present as Windows Edge while still running Edge Linux.
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.4129.78',
+
     launchOptions: {
       args: [
-        '--auth-server-allowlist=azlapdnpingjp01.mfcgd.com',
-        '--auth-negotiate-delegate-allowlist=azlapdnpingjp01.mfcgd.com',
+        `--auth-server-allowlist=${spnegoAllowlist}`,
+        `--auth-negotiate-delegate-allowlist=${spnegoAllowlist}`,
+        `--auth-server-whitelist=${spnegoAllowlist}`,
+        `--auth-negotiate-delegate-whitelist=${spnegoAllowlist}`,
+        '--auth-schemes=basic,digest,ntlm,negotiate',
         '--enable-auth-negotiate-port',
         '--no-sandbox',
         '--disable-dev-shm-usage'
