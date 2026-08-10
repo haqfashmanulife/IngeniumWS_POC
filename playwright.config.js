@@ -1,7 +1,11 @@
 import { defineConfig } from '@playwright/test';
 
-const basicAuthUsername = process.env.BASIC_AUTH_USERNAME;
-const basicAuthPassword = process.env.BASIC_AUTH_PASSWORD;
+const rawUsername = process.env.BASIC_AUTH_USERNAME || '';
+const password = process.env.BASIC_AUTH_PASSWORD || '';
+const domain = process.env.BASIC_AUTH_DOMAIN || 'MFCGD';
+const usernameForHttp = rawUsername.includes('\\') || rawUsername.includes('@')
+  ? rawUsername
+  : `${domain}\\${rawUsername}`;
 
 export default defineConfig({
   timeout: 180000,
@@ -12,14 +16,16 @@ export default defineConfig({
 
   use: {
     browserName: 'chromium',
+    channel: 'msedge',
     headless: true,
     ignoreHTTPSErrors: true,
 
-    // If the endpoint falls back to Basic/Digest auth, Playwright can answer it.
-    // If the endpoint uses Windows Integrated Authentication/SPNEGO, the Windows agent domain session handles it.
-    httpCredentials: basicAuthUsername && basicAuthPassword ? {
-      username: basicAuthUsername,
-      password: basicAuthPassword
+    // If the server falls back to Basic/NTLM-style username-password auth,
+    // send the manager-suggested domain-qualified user, for example MFCGD\\haqfash.
+    // For true SPNEGO/Kerberos, the kinit ticket from Jenkinsfile is the primary auth mechanism.
+    httpCredentials: rawUsername && password ? {
+      username: usernameForHttp,
+      password
     } : undefined,
 
     launchOptions: {
@@ -37,7 +43,6 @@ export default defineConfig({
 
     actionTimeout: 30000,
     navigationTimeout: 120000,
-
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
     video: 'off'
