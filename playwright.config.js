@@ -7,8 +7,6 @@ const usernameForHttp = rawUsername.includes('\\') || rawUsername.includes('@')
   ? rawUsername
   : `${domain}\\${rawUsername}`;
 
-// Chromium/Edge integrated-auth allowlist syntax on Linux expects patterns like *example.com.
-// The U2 launch page may redirect to another mfcgd.com SSO endpoint, so allow the whole internal domain.
 const spnegoAllowlist = '*mfcgd.com,azlapdnpingjp01.mfcgd.com';
 
 export default defineConfig({
@@ -24,13 +22,12 @@ export default defineConfig({
     headless: true,
     ignoreHTTPSErrors: true,
 
-    // Fallback only. Real SPNEGO uses the Kerberos ticket created by kinit in Jenkinsfile.
+    // Fallback only. The primary auth path is the curl SPNEGO cookie bridge.
     httpCredentials: rawUsername && password ? {
       username: usernameForHttp,
       password
     } : undefined,
 
-    // Some IWA/SPNEGO products gate support by browser family. Present as Windows Edge while still running Edge Linux.
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.4129.78',
 
     launchOptions: {
