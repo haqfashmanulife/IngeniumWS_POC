@@ -3,15 +3,11 @@ import { defineConfig } from '@playwright/test';
 const basicAuthUsername = process.env.BASIC_AUTH_USERNAME;
 const basicAuthPassword = process.env.BASIC_AUTH_PASSWORD;
 
-if (!basicAuthUsername || !basicAuthPassword) {
-  throw new Error('Missing BASIC_AUTH_USERNAME or BASIC_AUTH_PASSWORD. Configure Jenkins credential ID: ingenium-basic-auth');
-}
-
 export default defineConfig({
-  timeout: 900000,
+  timeout: 180000,
 
   expect: {
-    timeout: 30000
+    timeout: 60000
   },
 
   use: {
@@ -19,12 +15,19 @@ export default defineConfig({
     headless: true,
     ignoreHTTPSErrors: true,
 
-    // Handles the browser-level Sign in popup for:
-    // https://azlapdnpingjp01.mfcgd.com:9469
-    // This is separate from Ingenium application login.
-    httpCredentials: {
+    // If the endpoint falls back to Basic/Digest auth, Playwright can answer it.
+    // If the endpoint uses Windows Integrated Authentication/SPNEGO, the Windows agent domain session handles it.
+    httpCredentials: basicAuthUsername && basicAuthPassword ? {
       username: basicAuthUsername,
       password: basicAuthPassword
+    } : undefined,
+
+    launchOptions: {
+      args: [
+        '--auth-server-allowlist=azlapdnpingjp01.mfcgd.com',
+        '--auth-negotiate-delegate-allowlist=azlapdnpingjp01.mfcgd.com',
+        '--enable-auth-negotiate-port'
+      ]
     },
 
     viewport: {
@@ -42,6 +45,5 @@ export default defineConfig({
 
   workers: 1,
   retries: 0,
-
   reporter: [['list']]
 });
