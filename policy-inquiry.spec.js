@@ -14,7 +14,7 @@ test('U2 SSO smoke check - reach English Sign On page with Edge on Linux', async
   console.log('POLICY_ID:', POLICY_ID);
   console.log('MAJOR_POLICY_ID:', MAJOR_POLICY_ID);
   console.log('BROWSER: Microsoft Edge on Linux');
-  console.log('KRB_REALM:', process.env.KRB_REALM || 'MFCGD');
+  console.log('KRB_REALM:', process.env.KRB_REALM || 'MFCGD.COM');
 
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 120000 });
   await page.waitForTimeout(5000);
