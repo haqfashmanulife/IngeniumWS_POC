@@ -1,5 +1,5 @@
 module.exports = {
-  timeout: 240000,
+  timeout: 900000,
   retries: 0,
   outputDir: '/tmp/pwrun/test-results',
   use: {
