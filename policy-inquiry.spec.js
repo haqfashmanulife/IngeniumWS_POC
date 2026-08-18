@@ -160,18 +160,50 @@ async function clickMenuPath(page, appFrame, mainMenu, subMenu) {
   await page.waitForTimeout(5000);
 }
 
+async function domClick(locator, label) {
+  const first = locator.first();
+  await first.evaluate((element) => {
+    // Ingenium menu anchors may be present but hidden after prior navigation.
+    // Trigger the app's own onclick handler when available, otherwise use native click.
+    if (typeof window.clickedMenu === 'function') {
+      return window.clickedMenu(element);
+    }
+    element.click();
+    return true;
+  });
+  console.log(`Clicked ${label} using DOM onclick fallback`);
+}
+
 async function clickFirstAvailable(page, locators, label) {
   let lastError;
+
   for (const locator of locators) {
     try {
-      if ((await locator.count()) > 0) {
-        await safeClick(page, locator, label);
-        return;
+      const count = await locator.count();
+      if (count === 0) {
+        continue;
       }
+
+      // Prefer a visible match. Some menus keep several hidden duplicate anchors in DOM.
+      for (let i = 0; i < count; i++) {
+        const item = locator.nth(i);
+        if (await item.isVisible().catch(() => false)) {
+          await safeClick(page, item, label);
+          return;
+        }
+      }
+
+      // If all matches are hidden, use Ingenium's onclick handler directly.
+      await domClick(locator, label);
+      await page.waitForTimeout(5000);
+      return;
     } catch (error) {
       lastError = error;
+      console.log(`Locator strategy failed for ${label}: ${error.message}`);
     }
   }
+
+  await page.screenshot({ path: `${SCREENSHOT_DIR}/click-unavailable-${sanitizeName(label)}.png`, fullPage: true });
   throw lastError || new Error(`Locator not found for ${label}`);
 }
 
