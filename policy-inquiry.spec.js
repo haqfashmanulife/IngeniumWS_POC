@@ -1,484 +1,329 @@
 import { test, expect } from '@playwright/test';
+import fs from 'fs';
+import { execSync } from 'child_process';
 
-test('FINAL Ingenium Policy Inquiry Flow Stable', async ({ page }) => {
+const SCREENSHOT_DIR = 'screenshots';
+
+function ensureScreenshotDir() {
+  fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
+}
+
+function sanitizeName(value) {
+  return String(value || 'screen')
+    .replace(/[^a-z0-9]+/gi, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase();
+}
+
+function parseDb2Value(output) {
+  return String(output || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => !/^SQL/i.test(line))
+    .filter((line) => !/^[-=]+$/.test(line))
+    .map((line) => line.split(/\s+/)[0])
+    .find(Boolean);
+}
+
+function db2Value(envName, query) {
+  const fromEnv = process.env[envName];
+  if (fromEnv && fromEnv.trim()) {
+    console.log(`Using ${envName} from environment: ${fromEnv}`);
+    return fromEnv.trim();
+  }
+
+  console.log(`Environment variable ${envName} not set. Trying DB2 query from Node runtime.`);
   try {
-    const BASE_URL = process.env.APP_URL;
-    const USERNAME = process.env.APP_USERNAME;
-    const PASSWORD = process.env.APP_PASSWORD;
-    const COMPANY = process.env.COMPANY || 'Manulife';
-    const POLICY_ID = process.env.POLICY_ID;
-
-    console.log('START TEST');
-    console.log('BASE_URL:', BASE_URL);
-    console.log('POLICY_ID:', POLICY_ID);
-
-    expect(BASE_URL).toBeTruthy();
-    expect(USERNAME).toBeTruthy();
-    expect(PASSWORD).toBeTruthy();
-    expect(POLICY_ID).toBeTruthy();
-
-    // ======================================================
-    // FRAME FINDER
-    // ======================================================
-    async function findFrame(page, predicate, retries = 15, delay = 2000) {
-      for (let i = 0; i < retries; i++) {
-        for (const f of page.frames()) {
-          try {
-            if (await predicate(f)) {
-              return f;
-            }
-          } catch {}
-        }
-
-        console.log(`Frame not ready (${i + 1}/${retries})`);
-        await page.waitForTimeout(delay);
-      }
-
-      await page.screenshot({
-        path: 'screenshots/frame-error.png',
-        fullPage: true
-      });
-
-      throw new Error('Frame not found');
+    const command = `db2 -x "${query.replace(/"/g, '\\"')}"`;
+    const output = execSync(command, {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+    const value = parseDb2Value(output);
+    if (!value) {
+      throw new Error(`DB2 query returned no usable value for ${envName}`);
     }
+    console.log(`Fetched ${envName} from DB2: ${value}`);
+    return value;
+  } catch (error) {
+    throw new Error(`Missing ${envName}. Set it in Jenkins from DB2 before running Playwright. Query: ${query}. Error: ${error.message}`);
+  }
+}
 
-    // ======================================================
-    // SAFE CLICK
-    // ======================================================
-    async function safeClick(locator, retries = 5) {
-      for (let i = 0; i < retries; i++) {
-        try {
-          await locator.first().waitFor({
-            state: 'visible',
-            timeout: 5000
-          });
+function yesterdayDateYYYYMMDD() {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
 
-          await locator.first().click({
-            timeout: 5000
-          });
+async function findFrame(page, predicate, retries = 20, delay = 1500) {
+  for (let i = 0; i < retries; i++) {
+    for (const frame of page.frames()) {
+      try {
+        if (await predicate(frame)) {
+          return frame;
+        }
+      } catch {}
+    }
+    console.log(`Frame not ready (${i + 1}/${retries})`);
+    await page.waitForTimeout(delay);
+  }
+  await page.screenshot({ path: `${SCREENSHOT_DIR}/frame-not-found.png`, fullPage: true });
+  throw new Error('Frame not found for requested predicate');
+}
 
+async function safeClick(page, locator, label = 'element', retries = 6) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const first = locator.first();
+      await first.waitFor({ state: 'visible', timeout: 5000 });
+      await first.click({ timeout: 5000 });
+      console.log(`Clicked ${label}`);
+      return;
+    } catch (error) {
+      console.log(`Click retry ${i + 1}/${retries} for ${label}: ${error.message}`);
+      try {
+        const box = await locator.first().boundingBox();
+        if (box) {
+          await page.mouse.click(box.x + Math.min(10, box.width / 2), box.y + Math.min(10, box.height / 2));
+          console.log(`Clicked ${label} using coordinate fallback`);
           return;
-        } catch (e) {
-          console.log(`Click retry ${i + 1}: ${e.message}`);
-
-          try {
-            const box = await locator.first().boundingBox();
-            if (box) {
-              await page.mouse.click(box.x + 5, box.y + 5);
-              return;
-            }
-          } catch {}
-
-          await page.waitForTimeout(2000);
         }
-      }
-
-      await page.screenshot({
-        path: 'screenshots/click-error.png',
-        fullPage: true
-      });
-
-      throw new Error('Failed to click element');
+      } catch {}
+      await page.waitForTimeout(1500);
     }
+  }
+  await page.screenshot({ path: `${SCREENSHOT_DIR}/click-failed-${sanitizeName(label)}.png`, fullPage: true });
+  throw new Error(`Failed to click ${label}`);
+}
 
-    // ======================================================
-    // CLICK OK FROM ANY FRAME / FOOTER
-    // Ingenium footer OK may be in a separate frame.
-    // ======================================================
-    async function clickOkFromAnyFrame(screenName = '') {
-      console.log(`Trying to click OK ${screenName ? 'for ' + screenName : ''}`);
+async function clickOkFromAnyFrame(page, screenName = '') {
+  console.log(`Trying to click OK ${screenName ? 'for ' + screenName : ''}`);
+  const selectorFactories = [
+    (f) => f.getByRole('button', { name: /^OK$/i }),
+    (f) => f.locator('input[value="OK"]'),
+    (f) => f.locator('input[type="submit"][value="OK"]'),
+    (f) => f.locator('input[type="button"][value="OK"]'),
+    (f) => f.locator('input[type="image"][alt="OK"]'),
+    (f) => f.locator('img[alt="OK"]'),
+    (f) => f.locator('[title="OK"]'),
+    (f) => f.locator('a').filter({ hasText: /^OK$/i }),
+    (f) => f.locator('text=/^OK$/')
+  ];
 
-      const selectorFactories = [
-        (f) => f.getByRole('button', { name: /^OK$/i }),
-        (f) => f.locator('input[value="OK"]'),
-        (f) => f.locator('input[type="submit"][value="OK"]'),
-        (f) => f.locator('input[type="button"][value="OK"]'),
-        (f) => f.locator('input[type="image"][alt="OK"]'),
-        (f) => f.locator('img[alt="OK"]'),
-        (f) => f.locator('[title="OK"]'),
-        (f) => f.locator('a').filter({ hasText: /^OK$/i }),
-        (f) => f.locator('text=/^OK$/')
-      ];
-
-      for (let attempt = 0; attempt < 8; attempt++) {
-        for (const f of page.frames()) {
-          for (const makeLocator of selectorFactories) {
-            try {
-              const loc = makeLocator(f);
-              const count = await loc.count();
-
-              if (count > 0) {
-                const first = loc.first();
-
-                if (await first.isVisible().catch(() => false)) {
-                  await first.click({ timeout: 5000 });
-                  console.log(`Clicked OK using locator in frame: ${f.url()}`);
-                  await page.waitForTimeout(5000);
-                  return;
-                }
-              }
-            } catch {}
-          }
-        }
-
-        console.log(`OK not ready yet (${attempt + 1}/8)`);
-        await page.waitForTimeout(1500);
-      }
-
-      // Final fallback: OK button is visually in bottom footer.
-      console.log('OK selector not found, using footer coordinate fallback');
-
-      const vp = page.viewportSize();
-      if (vp) {
-        await page.mouse.click(
-          Math.floor(vp.width / 2) - 25,
-          Math.floor(vp.height) - 35
-        );
-
-        await page.waitForTimeout(5000);
-        console.log('Clicked OK using footer coordinate fallback');
-        return;
-      }
-
-      throw new Error('Could not click OK');
-    }
-
-    // ======================================================
-    // CLICK LEFT MENU ITEM
-    // ======================================================
-    async function clickLeftMenu(menuText) {
-      console.log(`Opening menu: ${menuText}`);
-
-      const menuFrame = await findFrame(page, async (f) => {
-        return await f.locator('a').filter({ hasText: menuText }).count() > 0;
-      }, 15, 2000);
-
-      await safeClick(
-        menuFrame.locator('a').filter({ hasText: menuText })
-      );
-
-      await page.waitForTimeout(5000);
-    }
-
-    // ======================================================
-    // WAIT FOR SCREEN TITLE
-    // ======================================================
-    async function waitForScreenTitle(titleText) {
-      console.log(`Waiting for screen title: ${titleText}`);
-
-      await findFrame(page, async (f) => {
-        return await f.locator(`text=${titleText}`).count() > 0;
-      }, 15, 2000);
-
-      console.log(`Screen title found: ${titleText}`);
-    }
-
-    // ======================================================
-    // FIND POLICY FORM FRAME
-    // Screen title and input are often in different frames.
-    // So find frame having visible Policy Id label + visible input.
-    // ======================================================
-    async function findPolicyFormFrame(screenName) {
-      console.log(`Finding policy form frame for: ${screenName}`);
-
-      const formFrame = await findFrame(page, async (f) => {
-        const hasPolicyLabel =
-          await f.locator('text=/Policy\\s*Id/i').count() > 0;
-
-        const visibleInputs =
-          await f.locator('input:visible').count() > 0;
-
-        return hasPolicyLabel && visibleInputs;
-      }, 15, 2000);
-
-      console.log(`Policy form frame found for: ${screenName}`);
-      return formFrame;
-    }
-
-    // ======================================================
-    // FILL POLICY ID ON CURRENT SCREEN
-    // ======================================================
-    async function fillPolicyIdOnScreen(screenName) {
-      const formFrame = await findPolicyFormFrame(screenName);
-
-      const policyInput = formFrame.locator('input:visible').first();
-
-      await policyInput.waitFor({
-        state: 'visible',
-        timeout: 10000
-      });
-
-      await policyInput.click();
-      await policyInput.fill(POLICY_ID, {
-        timeout: 10000
-      });
-
-      console.log(`Policy ID entered for ${screenName}: ${POLICY_ID}`);
-
-      return formFrame;
-    }
-
-    // ======================================================
-    // SCROLL ALL FRAMES AND CAPTURE SCREENSHOTS
-    // ======================================================
-    async function scrollAndCapture(prefix, count = 6) {
-      console.log(`Capturing scroll screenshots: ${prefix}`);
-
-      for (const f of page.frames()) {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    for (const frame of page.frames()) {
+      for (const makeLocator of selectorFactories) {
         try {
-          await f.evaluate(() => window.scrollTo(0, 0));
+          const loc = makeLocator(frame);
+          if ((await loc.count()) > 0 && await loc.first().isVisible().catch(() => false)) {
+            await loc.first().click({ timeout: 5000 });
+            console.log(`Clicked OK in frame: ${frame.url()}`);
+            await page.waitForTimeout(5000);
+            return;
+          }
         } catch {}
       }
-
-      await page.waitForTimeout(1000);
-
-      for (let i = 0; i < count; i++) {
-        await page.screenshot({
-          path: `screenshots/${prefix}-${POLICY_ID}-${i + 1}.png`,
-          fullPage: true
-        });
-
-        for (const f of page.frames()) {
-          try {
-            await f.evaluate(() => {
-              window.scrollBy(0, window.innerHeight * 0.85);
-            });
-          } catch {}
-        }
-
-        await page.waitForTimeout(1500);
-      }
-
-      console.log(`Completed screenshots for: ${prefix}`);
     }
-
-    // ======================================================
-    // STEP 1: Launch
-    // ======================================================
-    await page.goto(BASE_URL, {
-      waitUntil: 'domcontentloaded'
-    });
-
-    await page.waitForTimeout(5000);
-
-    await page.screenshot({
-      path: 'screenshots/01-launch.png',
-      fullPage: true
-    });
-
-    // ======================================================
-    // STEP 2: English button
-    // ======================================================
-    const english = page.getByText('English Sign On');
-
-    if (await english.isVisible().catch(() => false)) {
-      await english.click();
-      console.log('Clicked English Sign On');
-    }
-
-    await page.waitForTimeout(5000);
-
-    // ======================================================
-    // STEP 3: LOGIN FRAME
-    // ======================================================
-    const loginFrame = await findFrame(page, async (f) => {
-      return await f.locator('input[type="password"]').count() > 0;
-    });
-
-    console.log('Login frame found');
-
-    // ======================================================
-    // STEP 4: LOGIN
-    // ======================================================
-    await loginFrame.locator('input[type="text"]').first().fill(USERNAME);
-    await loginFrame.locator('input[type="password"]').fill(PASSWORD);
-    await loginFrame.locator('select').selectOption({ label: COMPANY });
-
-    await safeClick(loginFrame.getByRole('button', { name: /submit/i }));
-
-    console.log('Login submitted');
-
-    await page.waitForTimeout(5000);
-
-    await page.screenshot({
-      path: 'screenshots/02-after-login.png',
-      fullPage: true
-    });
-
-    // ======================================================
-    // STEP 5: OK POPUP AFTER LOGIN
-    // ======================================================
-    try {
-      const popupFrame = await findFrame(page, async (f) => {
-        return await f.getByRole('button', { name: 'OK' }).count() > 0;
-      }, 3, 2000);
-
-      await safeClick(popupFrame.getByRole('button', { name: 'OK' }));
-
-      console.log('Clicked OK popup');
-
-      await page.waitForTimeout(8000);
-    } catch {
-      console.log('No popup');
-    }
-
-    // ======================================================
-    // STEP 6: APP FRAME
-    // ======================================================
-    const appFrame = await findFrame(page, async (f) => {
-      return await f.locator('span[title="Policy Inquiry"]').count() > 0;
-    });
-
-    console.log('App frame ready');
-
-    // ======================================================
-    // STEP 7: EXISTING FLOW - POLICY INQUIRY ALL DETAILS
-    // ======================================================
-    await safeClick(appFrame.locator('span[title="Policy Inquiry"]'));
-
-    await safeClick(
-      appFrame.locator('a').filter({ hasText: 'Policy Inquiry - All Details' })
-    );
-
-    console.log('Navigation successful');
-
-    await page.waitForTimeout(5000);
-
-    // ======================================================
-    // STEP 8: FORM FRAME
-    // Existing logic preserved.
-    // ======================================================
-    const formFrame = await findFrame(page, async (f) => {
-      return await f.locator('input').count() > 0;
-    });
-
-    await formFrame.locator('input').first().fill(POLICY_ID);
-
-    console.log('Policy ID entered:', POLICY_ID);
-
-    await page.waitForTimeout(3000);
-
-    // ======================================================
-    // STEP 9: EXISTING OK LOGIC
-    // ======================================================
-    try {
-      const okFrame = await findFrame(page, async (f) => {
-        return await f.getByRole('button', { name: 'OK' }).count() > 0;
-      }, 5, 2000);
-
-      await safeClick(okFrame.getByRole('button', { name: 'OK' }));
-
-      console.log('Clicked OK after policy');
-
-      await page.waitForTimeout(6000);
-
-    } catch {
-      console.log('OK not found in frame, fallback click');
-
-      const vp = page.viewportSize();
-      if (vp) {
-        const x = Math.floor(vp.width / 2);
-        const y = Math.floor(vp.height - 40);
-
-        await page.mouse.click(x, y);
-
-        console.log('OK clicked via fallback');
-      }
-    }
-
-    // ======================================================
-    // STEP 10: FINAL SCREENSHOT - EXISTING FLOW
-    // ======================================================
-    await page.screenshot({
-      path: `screenshots/policy-${POLICY_ID}.png`,
-      fullPage: true
-    });
-
-    console.log(`Screenshot saved: screenshots/policy-${POLICY_ID}.png`);
-
-    // ======================================================
-    // STEP 11: NEW FLOW - INQUIRY COVERAGE VALUES
-    // ======================================================
-    await clickLeftMenu('Inquiry - Coverage Values');
-
-    await waitForScreenTitle('Inquiry - Coverage Values');
-
-    await fillPolicyIdOnScreen('Inquiry - Coverage Values');
-
-    await page.screenshot({
-      path: `screenshots/coverage-values-before-ok-${POLICY_ID}.png`,
-      fullPage: true
-    });
-
-    await clickOkFromAnyFrame('Inquiry - Coverage Values');
-
-    await page.waitForTimeout(6000);
-
-    await page.screenshot({
-      path: `screenshots/coverage-values-${POLICY_ID}.png`,
-      fullPage: true
-    });
-
-    console.log('Coverage Values completed');
-
-    // ======================================================
-    // STEP 12: NEW FLOW - INQUIRY COVERAGE DETAILS
-    // ======================================================
-    await clickLeftMenu('Inquiry - Coverage Details');
-
-    await waitForScreenTitle('Inquiry - Coverage Details');
-
-    await fillPolicyIdOnScreen('Inquiry - Coverage Details');
-
-    await page.screenshot({
-      path: `screenshots/coverage-details-before-ok-${POLICY_ID}.png`,
-      fullPage: true
-    });
-
-    await clickOkFromAnyFrame('Inquiry - Coverage Details');
-
-    await page.waitForTimeout(7000);
-
-    await scrollAndCapture('coverage-details', 6);
-
-    console.log('Coverage Details completed');
-
-    // ======================================================
-    // STEP 13: NEW FLOW - CALL CENTRE INFORMATION
-    // ======================================================
-    await clickLeftMenu('Inquiry - Call Centre Information');
-
-    await waitForScreenTitle('Inquiry - Call Centre Information');
-
-    await fillPolicyIdOnScreen('Inquiry - Call Centre Information');
-
-    await page.screenshot({
-      path: `screenshots/call-centre-before-ok-${POLICY_ID}.png`,
-      fullPage: true
-    });
-
-    await clickOkFromAnyFrame('Inquiry - Call Centre Information');
-
-    await page.waitForTimeout(7000);
-
-    await scrollAndCapture('call-centre', 6);
-
-    console.log('Call Centre Information completed');
-
-    console.log('ALL FLOWS COMPLETED SUCCESSFULLY');
-
-  } catch (e) {
-    console.error('TEST FAILURE:', e);
-
-    try {
-      await page.screenshot({
-        path: 'screenshots/failure-final.png',
-        fullPage: true
-      });
-    } catch (screenshotError) {
-      console.error('Could not capture failure screenshot:', screenshotError);
-    }
-
-    throw e;
+    await page.waitForTimeout(1000);
   }
+
+  console.log('OK selector not found. Using footer coordinate fallback.');
+  const vp = page.viewportSize();
+  if (vp) {
+    await page.mouse.click(Math.floor(vp.width / 2) - 25, Math.floor(vp.height) - 35);
+    await page.waitForTimeout(5000);
+    return;
+  }
+  throw new Error('Could not click OK');
+}
+
+async function clickMenuPath(page, appFrame, mainMenu, subMenu) {
+  console.log(`Navigating menu path: ${mainMenu} -> ${subMenu}`);
+
+  const mainCandidates = [
+    appFrame.locator(`span[title="${mainMenu}"]`),
+    appFrame.locator('span').filter({ hasText: new RegExp(`^${escapeRegExp(mainMenu)}$`, 'i') }),
+    appFrame.locator('a').filter({ hasText: new RegExp(escapeRegExp(mainMenu), 'i') }),
+    appFrame.getByText(mainMenu, { exact: true })
+  ];
+  await clickFirstAvailable(page, mainCandidates, mainMenu);
+  await page.waitForTimeout(1500);
+
+  const subCandidates = [
+    appFrame.locator('a').filter({ hasText: new RegExp(escapeRegExp(subMenu), 'i') }),
+    appFrame.locator('span').filter({ hasText: new RegExp(escapeRegExp(subMenu), 'i') }),
+    appFrame.getByText(subMenu, { exact: true })
+  ];
+  await clickFirstAvailable(page, subCandidates, subMenu);
+  await page.waitForTimeout(5000);
+}
+
+async function clickFirstAvailable(page, locators, label) {
+  let lastError;
+  for (const locator of locators) {
+    try {
+      if ((await locator.count()) > 0) {
+        await safeClick(page, locator, label);
+        return;
+      }
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error(`Locator not found for ${label}`);
+}
+
+function escapeRegExp(text) {
+  return String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+async function findAppFrame(page) {
+  return await findFrame(page, async (frame) => {
+    const markers = [
+      'Policy Inquiry',
+      'Agent',
+      'Client',
+      'Billing',
+      'Disbursements',
+      'Medical Claim Inquiry'
+    ];
+    for (const marker of markers) {
+      if (await frame.locator('span,a').filter({ hasText: marker }).count() > 0) {
+        return true;
+      }
+    }
+    return false;
+  }, 25, 2000);
+}
+
+async function fillVisibleInputs(page, screenName, values) {
+  const frame = await findFrame(page, async (f) => {
+    return await f.locator('input:visible').count() >= values.length;
+  }, 20, 1500);
+
+  const inputs = frame.locator('input:visible');
+  const count = await inputs.count();
+  console.log(`Found ${count} visible input(s) for ${screenName}. Filling ${values.length} value(s).`);
+
+  for (let i = 0; i < values.length; i++) {
+    const input = inputs.nth(i);
+    await input.waitFor({ state: 'visible', timeout: 10000 });
+    await input.click({ timeout: 5000 });
+    await input.fill(String(values[i]), { timeout: 10000 });
+    console.log(`Filled input ${i + 1} for ${screenName} with value ${values[i]}`);
+  }
+}
+
+async function scrollAndCapture(page, prefix, idValue, count = 5) {
+  console.log(`Capturing screenshots for ${prefix}`);
+  for (const frame of page.frames()) {
+    try { await frame.evaluate(() => window.scrollTo(0, 0)); } catch {}
+  }
+  await page.waitForTimeout(1000);
+
+  for (let i = 0; i < count; i++) {
+    await page.screenshot({
+      path: `${SCREENSHOT_DIR}/${sanitizeName(prefix)}-${idValue}-${i + 1}.png`,
+      fullPage: true
+    });
+    for (const frame of page.frames()) {
+      try { await frame.evaluate(() => window.scrollBy(0, window.innerHeight * 0.85)); } catch {}
+    }
+    await page.waitForTimeout(1200);
+  }
+}
+
+async function runInquiryScreen(page, appFrame, screen) {
+  console.log(`========== Running screen: ${screen.name} ==========`);
+  await clickMenuPath(page, appFrame, screen.mainMenu, screen.subMenu);
+  await fillVisibleInputs(page, screen.name, screen.values);
+  await page.screenshot({
+    path: `${SCREENSHOT_DIR}/${sanitizeName(screen.name)}-before-ok.png`,
+    fullPage: true
+  });
+  await clickOkFromAnyFrame(page, screen.name);
+  await page.waitForTimeout(screen.waitAfterOkMs || 7000);
+  await scrollAndCapture(page, screen.name, screen.values.join('-'), screen.captureCount || 5);
+  console.log(`========== Completed screen: ${screen.name} ==========`);
+}
+
+test('Ingenium extended multi-screen smoke flow', async ({ page }) => {
+  ensureScreenshotDir();
+
+  const BASE_URL = process.env.APP_URL;
+  const USERNAME = process.env.APP_USERNAME;
+  const PASSWORD = process.env.APP_PASSWORD;
+  const COMPANY = process.env.COMPANY || 'Manulife';
+
+  expect(BASE_URL).toBeTruthy();
+  expect(USERNAME).toBeTruthy();
+  expect(PASSWORD).toBeTruthy();
+
+  const AGT_ID = db2Value('AGT_ID', "SELECT AGT_ID FROM TAG WHERE CO_ID='CP' LIMIT 1");
+  const CLI_ID = db2Value('CLI_ID', "SELECT CLI_ID FROM TCLI WHERE CO_ID='CP' LIMIT 1");
+  const WL_POL_ID = db2Value('WL_POL_ID', "SELECT POL_ID FROM TPOL WHERE CO_ID='CP' AND PROD_APP_TYP_CD='WL' AND POL_CSTAT_CD='1' LIMIT 1");
+  const FIRM_BANKING_POL_ID = db2Value('FIRM_BANKING_POL_ID', "SELECT POL_ID FROM TFBNK WHERE CO_ID='CP' LIMIT 1");
+  const DEATH_CLM_ID = db2Value('DEATH_CLM_ID', "SELECT CLM_ID FROM TDCLM WHERE CO_ID='CP' AND CLM_STAT_CD='C' LIMIT 1");
+  const MED_CLM_ID = db2Value('MED_CLM_ID', "SELECT CLM_ID FROM TCLBD WHERE CO_ID='CP' LIMIT 1");
+  const REMITTANCE_DATE = process.env.REMITTANCE_DATE || yesterdayDateYYYYMMDD();
+
+  console.log('START EXTENDED INGENIUM SCREEN TEST');
+  console.log('BASE_URL:', BASE_URL);
+  console.log('AGT_ID:', AGT_ID);
+  console.log('CLI_ID:', CLI_ID);
+  console.log('WL_POL_ID:', WL_POL_ID);
+  console.log('FIRM_BANKING_POL_ID:', FIRM_BANKING_POL_ID);
+  console.log('DEATH_CLM_ID:', DEATH_CLM_ID);
+  console.log('MED_CLM_ID:', MED_CLM_ID);
+  console.log('REMITTANCE_DATE:', REMITTANCE_DATE);
+
+  await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 120000 });
+  await page.waitForTimeout(5000);
+  await page.screenshot({ path: `${SCREENSHOT_DIR}/01-launch.png`, fullPage: true });
+
+  const english = page.getByText('English Sign On');
+  if (await english.isVisible().catch(() => false)) {
+    await english.click();
+    console.log('Clicked English Sign On');
+  }
+  await page.waitForTimeout(5000);
+
+  const loginFrame = await findFrame(page, async (f) => await f.locator('input[type="password"]').count() > 0);
+  await loginFrame.locator('input[type="text"]').first().fill(USERNAME);
+  await loginFrame.locator('input[type="password"]').fill(PASSWORD);
+  await loginFrame.locator('select').selectOption({ label: COMPANY });
+  await safeClick(page, loginFrame.getByRole('button', { name: /submit/i }), 'Submit Login');
+  await page.waitForTimeout(6000);
+  await page.screenshot({ path: `${SCREENSHOT_DIR}/02-after-login.png`, fullPage: true });
+
+  try {
+    await clickOkFromAnyFrame(page, 'post-login popup');
+  } catch {
+    console.log('No post-login popup OK found. Continuing.');
+  }
+
+  const appFrame = await findAppFrame(page);
+  console.log('Application menu frame ready');
+
+  const screens = [
+    { name: 'Agent - Agent Inquiry', mainMenu: 'Agent', subMenu: 'Agent Inquiry', values: [AGT_ID], captureCount: 5 },
+    { name: 'Client - Address List', mainMenu: 'Client', subMenu: 'Address List', values: [CLI_ID], captureCount: 5 },
+    { name: 'Client - Client Inquiry', mainMenu: 'Client', subMenu: 'Client Inquiry', values: [CLI_ID], captureCount: 5 },
+    { name: 'Client - Previous Name List', mainMenu: 'Client', subMenu: 'Previous Name List', values: [CLI_ID], captureCount: 5 },
+    { name: 'Client Service - Client Inquiry General', mainMenu: 'Client Service', subMenu: 'Client Inquiry - General', values: [CLI_ID], captureCount: 5 },
+    { name: 'Client Service - Client Owner Summary', mainMenu: 'Client Service', subMenu: 'Client Owner Summary', values: [CLI_ID], captureCount: 5 },
+    { name: 'Medical Claim Inquiry - Master Claim Inquiry', mainMenu: 'Medical Claim Inquiry', subMenu: 'Master Claim Inquiry', values: [MED_CLM_ID], captureCount: 5 },
+    { name: 'Death Claims Inquiry - Death Master Claim Inquiry', mainMenu: 'Death Claims Inquiry', subMenu: 'Death Master Claim Inquiry', values: [DEATH_CLM_ID], captureCount: 5 },
+    { name: 'Disbursements - Firm Banking Entries', mainMenu: 'Disbursements', subMenu: 'Firm Banking Entries', values: [REMITTANCE_DATE, FIRM_BANKING_POL_ID], captureCount: 5 },
+    { name: 'Billing - Billing Activity Inquiry List by Policy', mainMenu: 'Billing', subMenu: 'Billing Activity List', values: [WL_POL_ID], captureCount: 5 },
+    { name: 'Complex Policy Change - Movement Inquiry', mainMenu: 'Complex Policy Change', subMenu: 'Movement Inquiry', values: [WL_POL_ID], captureCount: 5 }
+  ];
+
+  for (const screen of screens) {
+    await runInquiryScreen(page, appFrame, screen);
+  }
+
+  console.log('ALL EXTENDED INGENIUM SCREENS COMPLETED SUCCESSFULLY');
 });
