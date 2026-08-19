@@ -257,86 +257,39 @@ async function runInquiryScreen(page, appFrame, screen) {
 }
 
 async function optionalCredentialLogin(page) {
-  const company = process.env.COMPANY || 'Manulife';
-  const username = process.env.APP_LOGIN_USERNAME || process.env.APP_USERNAME || '';
-  const password = process.env.APP_LOGIN_PASSWORD || process.env.APP_PASSWORD || '';
-
+  // U2 SSO behavior:
+  // 1. Browser/domain authentication is handled by Playwright httpCredentials and/or curl SPNEGO cookie bridge.
+  // 2. Click English Sign On.
+  // 3. Ingenium shows Sign-On Connect with User Status = Connected.
+  // 4. Click OK. Do not use GOCC / ingenium application credentials for U2 SSO.
   const english = page.getByText('English Sign On', { exact: true });
   if (await english.isVisible().catch(() => false)) {
     await english.click();
     console.log('Clicked English Sign On');
     await page.waitForTimeout(5000);
+  } else {
+    console.log('English Sign On link not visible. Continuing to Sign-On Connect or app frame.');
   }
 
-  const hasPasswordFrame = await Promise.race([
-    findFrame(page, async (f) => await f.locator('input[type="password"]').count() > 0, 5, 1500).then(() => true).catch(() => false),
-    page.waitForTimeout(9000).then(() => false)
-  ]);
+  await page.screenshot({ path: `${SCREENSHOT_DIR}/03-after-english-sign-on.png`, fullPage: true });
+  const signOnText = await page.locator('body').innerText({ timeout: 5000 }).catch(() => '');
+  fs.writeFileSync(`${SCREENSHOT_DIR}/03-after-english-sign-on-text.txt`, signOnText, 'utf8');
 
-  if (!hasPasswordFrame) {
-    console.log('No credential login frame found after SSO. Continuing to app frame.');
+  const connectVisible = page.getByText(/Sign-On Connect|User Status|Connected/i);
+  if (await connectVisible.first().isVisible().catch(() => false)) {
+    console.log('Sign-On Connect page visible. Clicking OK to enter Ingenium application.');
+    await clickOkFromAnyFrame(page, 'Sign-On Connect');
+    await page.waitForTimeout(7000);
+    await page.screenshot({ path: `${SCREENSHOT_DIR}/04-after-signon-connect-ok.png`, fullPage: true });
     return;
   }
 
-  if (!username || !password) {
-    await page.screenshot({ path: `${SCREENSHOT_DIR}/credential-login-page-visible.png`, fullPage: true });
-    throw new Error('Credential login page is visible, but APP_LOGIN_USERNAME/APP_LOGIN_PASSWORD or APP_USERNAME/APP_PASSWORD is not set. SSO cookie bridge is unchanged. Add app login credentials if this environment still requires the second login page.');
-  }
-
-  const loginFrame = await findFrame(page, async (f) => await f.locator('input[type="password"]').count() > 0, 10, 1500);
-
-  const userCandidates = [
-    loginFrame.locator('input[type="text"]:visible'),
-    loginFrame.locator('input:not([type]):visible'),
-    loginFrame.locator('input[name*="user" i]:visible'),
-    loginFrame.locator('input[id*="user" i]:visible'),
-    loginFrame.locator('input[name*="login" i]:visible'),
-    loginFrame.locator('input[id*="login" i]:visible')
-  ];
-
-  let filledUser = false;
-  for (const candidate of userCandidates) {
-    if ((await candidate.count()) > 0) {
-      const field = candidate.first();
-      await field.fill(username, { timeout: 10000 }).catch(async (error) => {
-        console.log(`Username field candidate was present but could not be filled: ${error.message}`);
-      });
-      filledUser = true;
-      console.log('Filled credential login username field');
-      break;
-    }
-  }
-  if (!filledUser) {
-    console.log('No visible username text field found. Continuing with password only, username may already be supplied by SSO.');
-  }
-
-  const passwordField = loginFrame.locator('input[type="password"]:visible').first();
-  await passwordField.fill(password, { timeout: 10000 });
-
-  const selectCount = await loginFrame.locator('select').count();
-  if (selectCount > 0) {
-    await loginFrame.locator('select').first().selectOption({ label: company }).catch(async () => {
-      console.log(`Company select option ${company} not selected. Select may not be present or option text differs.`);
-    });
-  } else {
-    console.log('No company select found on credential login page. Continuing.');
-  }
-
-  const submitCandidates = [
-    loginFrame.getByRole('button', { name: /submit/i }),
-    loginFrame.locator('input[type="submit"]'),
-    loginFrame.locator('input[value*="Submit" i]'),
-    loginFrame.locator('input[value*="OK" i]'),
-    loginFrame.getByRole('button', { name: /^OK$/i })
-  ];
-  await clickFirstAvailable(page, submitCandidates, 'Submit credential login');
-  await page.waitForTimeout(6000);
-  await page.screenshot({ path: `${SCREENSHOT_DIR}/03-after-credential-login.png`, fullPage: true });
-
   try {
-    await clickOkFromAnyFrame(page, 'post-login popup');
+    await clickOkFromAnyFrame(page, 'possible Sign-On Connect');
+    await page.waitForTimeout(7000);
+    await page.screenshot({ path: `${SCREENSHOT_DIR}/04-after-possible-signon-ok.png`, fullPage: true });
   } catch {
-    console.log('No post-login popup OK found. Continuing.');
+    console.log('No Sign-On Connect OK button found. Continuing to app frame detection.');
   }
 }
 
