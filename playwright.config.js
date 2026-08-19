@@ -10,26 +10,18 @@ const usernameForHttp = rawUsername.includes('\\') || rawUsername.includes('@')
 const spnegoAllowlist = '*mfcgd.com,azlapdnpingjp01.mfcgd.com';
 
 export default defineConfig({
-  timeout: 180000,
-
-  expect: {
-    timeout: 60000
-  },
-
+  timeout: 3600000,
+  expect: { timeout: 60000 },
   use: {
     browserName: 'chromium',
     channel: 'msedge',
     headless: true,
     ignoreHTTPSErrors: true,
-
-    // Fallback only. The primary auth path is the curl SPNEGO cookie bridge.
     httpCredentials: rawUsername && password ? {
       username: usernameForHttp,
       password
     } : undefined,
-
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.4129.78',
-
     launchOptions: {
       args: [
         `--auth-server-allowlist=${spnegoAllowlist}`,
@@ -42,19 +34,13 @@ export default defineConfig({
         '--disable-dev-shm-usage'
       ]
     },
-
-    viewport: {
-      width: 1920,
-      height: 1080
-    },
-
+    viewport: { width: 1920, height: 1080 },
     actionTimeout: 30000,
     navigationTimeout: 120000,
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
     video: 'off'
   },
-
   workers: 1,
   retries: 0,
   reporter: [['list']]
