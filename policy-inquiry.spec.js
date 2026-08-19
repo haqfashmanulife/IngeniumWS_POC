@@ -340,6 +340,13 @@ test('Ingenium extended multi-screen smoke flow', async ({ page }) => {
   console.log('Application menu frame ready');
 
   const screens = [
+    // Original policy inquiry screens retained from the earlier working flow.
+    { name: 'Policy Inquiry - All Details', mainMenu: 'Policy Inquiry', subMenu: 'Policy Inquiry - All Details', values: [WL_POL_ID], captureCount: 5 },
+    { name: 'Policy Inquiry - Inquiry Coverage Values', mainMenu: 'Policy Inquiry', subMenu: 'Inquiry - Coverage Values', values: [WL_POL_ID], captureCount: 5 },
+    { name: 'Policy Inquiry - Inquiry Coverage Details', mainMenu: 'Policy Inquiry', subMenu: 'Inquiry - Coverage Details', values: [WL_POL_ID], captureCount: 6 },
+    { name: 'Policy Inquiry - Inquiry Call Centre Information', mainMenu: 'Policy Inquiry', subMenu: 'Inquiry - Call Centre Information', values: [WL_POL_ID], captureCount: 6 },
+
+    // Additional DB2-driven inquiry screens.
     { name: 'Agent - Agent Inquiry', mainMenu: 'Agent', subMenu: 'Agent Inquiry', values: [AGT_ID], captureCount: 5 },
     { name: 'Client - Address List', mainMenu: 'Client', subMenu: 'Address List', values: [CLI_ID], captureCount: 5 },
     { name: 'Client - Client Inquiry', mainMenu: 'Client', subMenu: 'Client Inquiry', values: [CLI_ID], captureCount: 5 },
