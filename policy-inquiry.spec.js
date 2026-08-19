@@ -139,7 +139,7 @@ async function clickOkFromAnyFrame(page, screenName = '') {
   throw new Error('Could not click OK');
 }
 
-async function clickMenuPath(page, appFrame, mainMenu, subMenu) {
+async function clickMenuPath(page, appFrame, mainMenu, subMenu, subMenuAliases = []) {
   console.log(`Navigating menu path: ${mainMenu} -> ${subMenu}`);
 
   const mainCandidates = [
@@ -151,11 +151,22 @@ async function clickMenuPath(page, appFrame, mainMenu, subMenu) {
   await clickFirstAvailable(page, mainCandidates, mainMenu);
   await page.waitForTimeout(1500);
 
-  const subCandidates = [
-    appFrame.locator('a').filter({ hasText: new RegExp(escapeRegExp(subMenu), 'i') }),
-    appFrame.locator('span').filter({ hasText: new RegExp(escapeRegExp(subMenu), 'i') }),
-    appFrame.getByText(subMenu, { exact: true })
-  ];
+  const labels = [subMenu, ...subMenuAliases].filter(Boolean);
+  const subCandidates = [];
+  for (const label of labels) {
+    subCandidates.push(appFrame.locator('a').filter({ hasText: new RegExp(escapeRegExp(label), 'i') }));
+    subCandidates.push(appFrame.locator('span').filter({ hasText: new RegExp(escapeRegExp(label), 'i') }));
+    subCandidates.push(appFrame.getByText(label, { exact: true }));
+  }
+
+  // Last-resort partial matches for very long Ingenium labels that may wrap or differ by spaces/dashes.
+  if (/loan quote/i.test(subMenu) || /manual suspension/i.test(subMenu)) {
+    subCandidates.push(appFrame.locator('a').filter({ hasText: /Loan Quote/i }));
+    subCandidates.push(appFrame.locator('a').filter({ hasText: /Manual Suspension/i }));
+    subCandidates.push(appFrame.locator('span').filter({ hasText: /Loan Quote/i }));
+    subCandidates.push(appFrame.locator('span').filter({ hasText: /Manual Suspension/i }));
+  }
+
   await clickFirstAvailable(page, subCandidates, subMenu);
   await page.waitForTimeout(5000);
 }
@@ -270,7 +281,7 @@ async function scrollAndCapture(page, screen, idValue, count = 5) {
 
 async function runInquiryScreen(page, appFrame, screen) {
   console.log(`========== Running screen: ${screen.name} ==========`);
-  await clickMenuPath(page, appFrame, screen.mainMenu, screen.subMenu);
+  await clickMenuPath(page, appFrame, screen.mainMenu, screen.subMenu, screen.subMenuAliases || []);
   await fillVisibleInputs(page, screen.name, screen.values);
   await page.screenshot({
     path: `${SCREENSHOT_DIR}/screen-${String(screen.screenNo).padStart(2, '0')}-${sanitizeName(screen.name)}-before-ok.png`,
@@ -371,7 +382,7 @@ test('Ingenium extended multi-screen smoke flow', async ({ page }) => {
     { screenNo: 17, name: 'Policy History - Change History List', mainMenu: 'Policy History', subMenu: 'Change History List', values: [CHANGE_HIST_POLICY_ID], captureCount: 6 },
     { screenNo: 18, name: 'Policy History - Loan Detail List', mainMenu: 'Policy History', subMenu: 'Loan Detail List', values: [LOAN_DETAIL_POLICY_ID], captureCount: 6 },
     { screenNo: 19, name: 'Policy Inquiry - Inquiry Coverage Premiums', mainMenu: 'Policy Inquiry', subMenu: 'Inquiry - Coverage Premiums', values: [WL_POL_ID], captureCount: 6 },
-    { screenNo: 20, name: 'Policy Inquiry - Inquiry Loan Quote APL APS Manual Suspension Judgment', mainMenu: 'Policy Inquiry', subMenu: 'Inquiry-Loan Quote / APL / APS / Manual Suspension Judgment', values: [WL_POL_ID], captureCount: 6 }
+    { screenNo: 20, name: 'Policy Inquiry - Inquiry Loan APL APS Manual PS Judgment', mainMenu: 'Policy Inquiry', subMenu: 'Inquiry-Loan/APL/APS/Manual PS Judgment', subMenuAliases: ['Inquiry-Loan/APL/APS/Manual PS Judgment', 'Inquiry - Loan/APL/APS/Manual PS Judgment', 'Inquiry-Loan / APL / APS / Manual PS Judgment', 'Inquiry - Policy Loan Quote, APL or APS Judgment', 'Policy Loan Quote, APL or APS Judgment', 'Loan/APL/APS/Manual PS Judgment', 'Manual PS Judgment'], values: [WL_POL_ID], captureCount: 6 }
   ];
 
   for (const screen of screens) {
