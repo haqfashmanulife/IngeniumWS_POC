@@ -284,12 +284,52 @@ async function optionalCredentialLogin(page) {
   }
 
   const loginFrame = await findFrame(page, async (f) => await f.locator('input[type="password"]').count() > 0, 10, 1500);
-  await loginFrame.locator('input[type="text"]').first().fill(username);
-  await loginFrame.locator('input[type="password"]').fill(password);
-  await loginFrame.locator('select').selectOption({ label: company }).catch(async () => {
-    console.log(`Company select option ${company} not selected. Select may not be present or option text differs.`);
-  });
-  await safeClick(page, loginFrame.getByRole('button', { name: /submit/i }), 'Submit credential login');
+
+  const userCandidates = [
+    loginFrame.locator('input[type="text"]:visible'),
+    loginFrame.locator('input:not([type]):visible'),
+    loginFrame.locator('input[name*="user" i]:visible'),
+    loginFrame.locator('input[id*="user" i]:visible'),
+    loginFrame.locator('input[name*="login" i]:visible'),
+    loginFrame.locator('input[id*="login" i]:visible')
+  ];
+
+  let filledUser = false;
+  for (const candidate of userCandidates) {
+    if ((await candidate.count()) > 0) {
+      const field = candidate.first();
+      await field.fill(username, { timeout: 10000 }).catch(async (error) => {
+        console.log(`Username field candidate was present but could not be filled: ${error.message}`);
+      });
+      filledUser = true;
+      console.log('Filled credential login username field');
+      break;
+    }
+  }
+  if (!filledUser) {
+    console.log('No visible username text field found. Continuing with password only, username may already be supplied by SSO.');
+  }
+
+  const passwordField = loginFrame.locator('input[type="password"]:visible').first();
+  await passwordField.fill(password, { timeout: 10000 });
+
+  const selectCount = await loginFrame.locator('select').count();
+  if (selectCount > 0) {
+    await loginFrame.locator('select').first().selectOption({ label: company }).catch(async () => {
+      console.log(`Company select option ${company} not selected. Select may not be present or option text differs.`);
+    });
+  } else {
+    console.log('No company select found on credential login page. Continuing.');
+  }
+
+  const submitCandidates = [
+    loginFrame.getByRole('button', { name: /submit/i }),
+    loginFrame.locator('input[type="submit"]'),
+    loginFrame.locator('input[value*="Submit" i]'),
+    loginFrame.locator('input[value*="OK" i]'),
+    loginFrame.getByRole('button', { name: /^OK$/i })
+  ];
+  await clickFirstAvailable(page, submitCandidates, 'Submit credential login');
   await page.waitForTimeout(6000);
   await page.screenshot({ path: `${SCREENSHOT_DIR}/03-after-credential-login.png`, fullPage: true });
 
