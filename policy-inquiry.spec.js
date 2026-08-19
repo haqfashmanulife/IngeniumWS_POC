@@ -248,8 +248,9 @@ async function fillVisibleInputs(page, screenName, values) {
   }
 }
 
-async function scrollAndCapture(page, prefix, idValue, count = 5) {
-  console.log(`Capturing screenshots for ${prefix}`);
+async function scrollAndCapture(page, screen, idValue, count = 5) {
+  const prefix = `screen-${String(screen.screenNo).padStart(2, '0')}-${sanitizeName(screen.name)}`;
+  console.log(`Capturing screenshots for ${screen.name}`);
   for (const frame of page.frames()) {
     try { await frame.evaluate(() => window.scrollTo(0, 0)); } catch {}
   }
@@ -257,7 +258,7 @@ async function scrollAndCapture(page, prefix, idValue, count = 5) {
 
   for (let i = 0; i < count; i++) {
     await page.screenshot({
-      path: `${SCREENSHOT_DIR}/${sanitizeName(prefix)}-${idValue}-${i + 1}.png`,
+      path: `${SCREENSHOT_DIR}/${prefix}-${idValue}-${i + 1}.png`,
       fullPage: true
     });
     for (const frame of page.frames()) {
@@ -272,12 +273,12 @@ async function runInquiryScreen(page, appFrame, screen) {
   await clickMenuPath(page, appFrame, screen.mainMenu, screen.subMenu);
   await fillVisibleInputs(page, screen.name, screen.values);
   await page.screenshot({
-    path: `${SCREENSHOT_DIR}/${sanitizeName(screen.name)}-before-ok.png`,
+    path: `${SCREENSHOT_DIR}/screen-${String(screen.screenNo).padStart(2, '0')}-${sanitizeName(screen.name)}-before-ok.png`,
     fullPage: true
   });
   await clickOkFromAnyFrame(page, screen.name);
   await page.waitForTimeout(screen.waitAfterOkMs || 7000);
-  await scrollAndCapture(page, screen.name, screen.values.join('-'), screen.captureCount || 5);
+  await scrollAndCapture(page, screen, screen.values.join('-'), screen.captureCount || 5);
   console.log(`========== Completed screen: ${screen.name} ==========`);
 }
 
@@ -300,6 +301,9 @@ test('Ingenium extended multi-screen smoke flow', async ({ page }) => {
   const DEATH_CLM_ID = db2Value('DEATH_CLM_ID', "SELECT CLM_ID FROM TDCLM WHERE CO_ID='CP' AND CLM_STAT_CD='C' LIMIT 1");
   const MED_CLM_ID = db2Value('MED_CLM_ID', "SELECT CLM_ID FROM TCLBD WHERE CO_ID='CP' LIMIT 1");
   const REMITTANCE_DATE = process.env.REMITTANCE_DATE || yesterdayDateYYYYMMDD();
+  const APL_POLICY_ID = db2Value('APL_POLICY_ID', "SELECT POL_ID FROM TPOLL WHERE CO_ID='CP' AND POL_LOAN_ID='A' AND LOAN_AMT>'0' LIMIT 1");
+  const CHANGE_HIST_POLICY_ID = db2Value('CHANGE_HIST_POLICY_ID', "SELECT POL_ID FROM TPHST WHERE CO_ID='CP' LIMIT 1");
+  const LOAN_DETAIL_POLICY_ID = db2Value('LOAN_DETAIL_POLICY_ID', "SELECT POL_ID FROM TPOLL WHERE CO_ID='CP' AND POL_LOAN_ID='C' AND LOAN_AMT>'0' LIMIT 1");
 
   console.log('START EXTENDED INGENIUM SCREEN TEST');
   console.log('BASE_URL:', BASE_URL);
@@ -310,6 +314,9 @@ test('Ingenium extended multi-screen smoke flow', async ({ page }) => {
   console.log('DEATH_CLM_ID:', DEATH_CLM_ID);
   console.log('MED_CLM_ID:', MED_CLM_ID);
   console.log('REMITTANCE_DATE:', REMITTANCE_DATE);
+  console.log('APL_POLICY_ID:', APL_POLICY_ID);
+  console.log('CHANGE_HIST_POLICY_ID:', CHANGE_HIST_POLICY_ID);
+  console.log('LOAN_DETAIL_POLICY_ID:', LOAN_DETAIL_POLICY_ID);
 
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 120000 });
   await page.waitForTimeout(5000);
@@ -341,23 +348,30 @@ test('Ingenium extended multi-screen smoke flow', async ({ page }) => {
 
   const screens = [
     // Original policy inquiry screens retained from the earlier working flow.
-    { name: 'Policy Inquiry - All Details', mainMenu: 'Policy Inquiry', subMenu: 'Policy Inquiry - All Details', values: [WL_POL_ID], captureCount: 5 },
-    { name: 'Policy Inquiry - Inquiry Coverage Values', mainMenu: 'Policy Inquiry', subMenu: 'Inquiry - Coverage Values', values: [WL_POL_ID], captureCount: 5 },
-    { name: 'Policy Inquiry - Inquiry Coverage Details', mainMenu: 'Policy Inquiry', subMenu: 'Inquiry - Coverage Details', values: [WL_POL_ID], captureCount: 6 },
-    { name: 'Policy Inquiry - Inquiry Call Centre Information', mainMenu: 'Policy Inquiry', subMenu: 'Inquiry - Call Centre Information', values: [WL_POL_ID], captureCount: 6 },
+    { screenNo: 1, name: 'Policy Inquiry - All Details', mainMenu: 'Policy Inquiry', subMenu: 'Policy Inquiry - All Details', values: [WL_POL_ID], captureCount: 5 },
+    { screenNo: 2, name: 'Policy Inquiry - Inquiry Coverage Values', mainMenu: 'Policy Inquiry', subMenu: 'Inquiry - Coverage Values', values: [WL_POL_ID], captureCount: 5 },
+    { screenNo: 3, name: 'Policy Inquiry - Inquiry Coverage Details', mainMenu: 'Policy Inquiry', subMenu: 'Inquiry - Coverage Details', values: [WL_POL_ID], captureCount: 6 },
+    { screenNo: 4, name: 'Policy Inquiry - Inquiry Call Centre Information', mainMenu: 'Policy Inquiry', subMenu: 'Inquiry - Call Centre Information', values: [WL_POL_ID], captureCount: 6 },
 
-    // Additional DB2-driven inquiry screens.
-    { name: 'Agent - Agent Inquiry', mainMenu: 'Agent', subMenu: 'Agent Inquiry', values: [AGT_ID], captureCount: 5 },
-    { name: 'Client - Address List', mainMenu: 'Client', subMenu: 'Address List', values: [CLI_ID], captureCount: 5 },
-    { name: 'Client - Client Inquiry', mainMenu: 'Client', subMenu: 'Client Inquiry', values: [CLI_ID], captureCount: 5 },
-    { name: 'Client - Previous Name List', mainMenu: 'Client', subMenu: 'Previous Name List', values: [CLI_ID], captureCount: 5 },
-    { name: 'Client Service - Client Inquiry General', mainMenu: 'Client Service', subMenu: 'Client Inquiry - General', values: [CLI_ID], captureCount: 5 },
-    { name: 'Client Service - Client Owner Summary', mainMenu: 'Client Service', subMenu: 'Client Owner Summary', values: [CLI_ID], captureCount: 5 },
-    { name: 'Medical Claim Inquiry - Master Claim Inquiry', mainMenu: 'Medical Claim Inquiry', subMenu: 'Master Claim Inquiry', values: [MED_CLM_ID], captureCount: 5 },
-    { name: 'Death Claims Inquiry - Death Master Claim Inquiry', mainMenu: 'Death Claims Inquiry', subMenu: 'Death Master Claim Inquiry', values: [DEATH_CLM_ID], captureCount: 5 },
-    { name: 'Disbursements - Firm Banking Entries', mainMenu: 'Disbursements', subMenu: 'Firm Banking Entries', values: [REMITTANCE_DATE, FIRM_BANKING_POL_ID], captureCount: 5 },
-    { name: 'Billing - Billing Activity Inquiry List by Policy', mainMenu: 'Billing', subMenu: 'Billing Activity List', values: [WL_POL_ID], captureCount: 5 },
-    { name: 'Complex Policy Change - Movement Inquiry', mainMenu: 'Complex Policy Change', subMenu: 'Movement Inquiry', values: [WL_POL_ID], captureCount: 5 }
+    // Existing DB2-driven inquiry screens.
+    { screenNo: 5, name: 'Agent - Agent Inquiry', mainMenu: 'Agent', subMenu: 'Agent Inquiry', values: [AGT_ID], captureCount: 5 },
+    { screenNo: 6, name: 'Client - Address List', mainMenu: 'Client', subMenu: 'Address List', values: [CLI_ID], captureCount: 5 },
+    { screenNo: 7, name: 'Client - Client Inquiry', mainMenu: 'Client', subMenu: 'Client Inquiry', values: [CLI_ID], captureCount: 5 },
+    { screenNo: 8, name: 'Client - Previous Name List', mainMenu: 'Client', subMenu: 'Previous Name List', values: [CLI_ID], captureCount: 5 },
+    { screenNo: 9, name: 'Client Service - Client Inquiry General', mainMenu: 'Client Service', subMenu: 'Client Inquiry - General', values: [CLI_ID], captureCount: 5 },
+    { screenNo: 10, name: 'Client Service - Client Owner Summary', mainMenu: 'Client Service', subMenu: 'Client Owner Summary', values: [CLI_ID], captureCount: 5 },
+    { screenNo: 11, name: 'Medical Claim Inquiry - Master Claim Inquiry', mainMenu: 'Medical Claim Inquiry', subMenu: 'Master Claim Inquiry', values: [MED_CLM_ID], captureCount: 5 },
+    { screenNo: 12, name: 'Death Claims Inquiry - Death Master Claim Inquiry', mainMenu: 'Death Claims Inquiry', subMenu: 'Death Master Claim Inquiry', values: [DEATH_CLM_ID], captureCount: 5 },
+    { screenNo: 13, name: 'Disbursements - Firm Banking Entries', mainMenu: 'Disbursements', subMenu: 'Firm Banking Entries', values: [REMITTANCE_DATE, FIRM_BANKING_POL_ID], captureCount: 5 },
+    { screenNo: 14, name: 'Billing - Billing Activity Inquiry List by Policy', mainMenu: 'Billing', subMenu: 'Billing Activity List', values: [WL_POL_ID], captureCount: 5 },
+    { screenNo: 15, name: 'Complex Policy Change - Movement Inquiry', mainMenu: 'Complex Policy Change', subMenu: 'Movement Inquiry', values: [WL_POL_ID], captureCount: 5 },
+
+    // Newly added screens from remaining screens document.
+    { screenNo: 16, name: 'Policy History - APL History List', mainMenu: 'Policy History', subMenu: 'APL History', values: [APL_POLICY_ID], captureCount: 5 },
+    { screenNo: 17, name: 'Policy History - Change History List', mainMenu: 'Policy History', subMenu: 'Change History List', values: [CHANGE_HIST_POLICY_ID], captureCount: 6 },
+    { screenNo: 18, name: 'Policy History - Loan Detail List', mainMenu: 'Policy History', subMenu: 'Loan Detail List', values: [LOAN_DETAIL_POLICY_ID], captureCount: 6 },
+    { screenNo: 19, name: 'Policy Inquiry - Inquiry Coverage Premiums', mainMenu: 'Policy Inquiry', subMenu: 'Inquiry - Coverage Premiums', values: [WL_POL_ID], captureCount: 6 },
+    { screenNo: 20, name: 'Policy Inquiry - Inquiry Loan Quote APL APS Manual Suspension Judgment', mainMenu: 'Policy Inquiry', subMenu: 'Inquiry-Loan Quote / APL / APS / Manual Suspension Judgment', values: [WL_POL_ID], captureCount: 6 }
   ];
 
   for (const screen of screens) {
