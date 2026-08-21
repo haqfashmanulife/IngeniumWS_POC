@@ -1,6 +1,5 @@
 import { test, expect } from '@playwright/test';
 import fs from 'fs';
-import { execSync } from 'child_process';
 
 const SCREENSHOT_DIR = 'screenshots';
 
@@ -15,55 +14,55 @@ function sanitizeName(value) {
     .toLowerCase();
 }
 
-function parseDb2Value(output) {
-  return String(output || '')
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .filter((line) => !/^SQL/i.test(line))
-    .filter((line) => !/^[-=]+$/.test(line))
-    .map((line) => line.split(/\s+/)[0])
-    .find(Boolean);
-}
-
-function db2Value(envName, query) {
-  const fromEnv = process.env[envName];
-  if (fromEnv && fromEnv.trim()) {
-    console.log(`Using ${envName} from environment: ${fromEnv}`);
-    return fromEnv.trim();
+function parseCurlCookieJar(cookieJarPath) {
+  if (!cookieJarPath || !fs.existsSync(cookieJarPath)) {
+    console.log('No curl cookie jar found. COOKIE_JAR:', cookieJarPath || 'not-set');
+    return [];
   }
 
-  console.log(`Environment variable ${envName} not set. Trying DB2 query from Node runtime.`);
-  try {
-    const command = `db2 -x "${query.replace(/"/g, '\\"')}"`;
-    const output = execSync(command, {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe']
+  const lines = fs.readFileSync(cookieJarPath, 'utf8')
+    .split('\n')
+    .filter((line) => line.trim() && !line.startsWith('# Netscape') && !line.startsWith('# This file'));
+
+  const cookies = [];
+  for (const line of lines) {
+    const httpOnly = line.startsWith('#HttpOnly_');
+    const normalized = httpOnly ? line.replace('#HttpOnly_', '') : line;
+    if (normalized.startsWith('#')) continue;
+    const parts = normalized.split('\t');
+    if (parts.length < 7) continue;
+    const [domain, , path, secure, expires, name, ...valueParts] = parts;
+    const value = valueParts.join('\t');
+    if (!domain || !path || !name || !value) continue;
+    cookies.push({
+      domain,
+      path,
+      secure: secure.toUpperCase() === 'TRUE',
+      expires: Number(expires) || -1,
+      name,
+      value,
+      httpOnly,
+      sameSite: 'Lax'
     });
-    const value = parseDb2Value(output);
-    if (!value) {
-      throw new Error(`DB2 query returned no usable value for ${envName}`);
-    }
-    console.log(`Fetched ${envName} from DB2: ${value}`);
-    return value;
-  } catch (error) {
-    throw new Error(`Missing ${envName}. Set it in Jenkins from DB2 before running Playwright. Query: ${query}. Error: ${error.message}`);
   }
+  return cookies;
 }
 
-function yesterdayDateYYYYMMDD() {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  return d.toISOString().slice(0, 10);
+async function loadCurlCookiesIntoContext(context) {
+  const cookieJar = process.env.COOKIE_JAR;
+  const cookies = parseCurlCookieJar(cookieJar);
+  console.log('Cookies parsed from curl jar:', cookies.map((cookie) => cookie.name).join(', ') || 'none');
+  if (cookies.length > 0) {
+    await context.addCookies(cookies);
+    console.log('Added curl SPNEGO cookies to Playwright context:', cookies.length);
+  }
 }
 
 async function findFrame(page, predicate, retries = 20, delay = 1500) {
   for (let i = 0; i < retries; i++) {
     for (const frame of page.frames()) {
       try {
-        if (await predicate(frame)) {
-          return frame;
-        }
+        if (await predicate(frame)) return frame;
       } catch {}
     }
     console.log(`Frame not ready (${i + 1}/${retries})`);
@@ -139,9 +138,47 @@ async function clickOkFromAnyFrame(page, screenName = '') {
   throw new Error('Could not click OK');
 }
 
+function escapeRegExp(text) {
+  return String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+async function domClick(locator, label) {
+  const first = locator.first();
+  await first.evaluate((element) => {
+    if (typeof window.clickedMenu === 'function') return window.clickedMenu(element);
+    element.click();
+    return true;
+  });
+  console.log(`Clicked ${label} using DOM onclick fallback`);
+}
+
+async function clickFirstAvailable(page, locators, label) {
+  let lastError;
+  for (const locator of locators) {
+    try {
+      const count = await locator.count();
+      if (count === 0) continue;
+      for (let i = 0; i < count; i++) {
+        const item = locator.nth(i);
+        if (await item.isVisible().catch(() => false)) {
+          await safeClick(page, item, label);
+          return;
+        }
+      }
+      await domClick(locator, label);
+      await page.waitForTimeout(5000);
+      return;
+    } catch (error) {
+      lastError = error;
+      console.log(`Locator strategy failed for ${label}: ${error.message}`);
+    }
+  }
+  await page.screenshot({ path: `${SCREENSHOT_DIR}/click-unavailable-${sanitizeName(label)}.png`, fullPage: true });
+  throw lastError || new Error(`Locator not found for ${label}`);
+}
+
 async function clickMenuPath(page, appFrame, mainMenu, subMenu, subMenuAliases = []) {
   console.log(`Navigating menu path: ${mainMenu} -> ${subMenu}`);
-
   const mainCandidates = [
     appFrame.locator(`span[title="${mainMenu}"]`),
     appFrame.locator('span').filter({ hasText: new RegExp(`^${escapeRegExp(mainMenu)}$`, 'i') }),
@@ -158,98 +195,31 @@ async function clickMenuPath(page, appFrame, mainMenu, subMenu, subMenuAliases =
     subCandidates.push(appFrame.locator('span').filter({ hasText: new RegExp(escapeRegExp(label), 'i') }));
     subCandidates.push(appFrame.getByText(label, { exact: true }));
   }
-
-  // Last-resort partial matches for very long Ingenium labels that may wrap or differ by spaces/dashes.
-  if (/loan quote/i.test(subMenu) || /manual suspension/i.test(subMenu)) {
-    subCandidates.push(appFrame.locator('a').filter({ hasText: /Loan Quote/i }));
-    subCandidates.push(appFrame.locator('a').filter({ hasText: /Manual Suspension/i }));
-    subCandidates.push(appFrame.locator('span').filter({ hasText: /Loan Quote/i }));
-    subCandidates.push(appFrame.locator('span').filter({ hasText: /Manual Suspension/i }));
+  if (/loan quote/i.test(subMenu) || /manual ps/i.test(subMenu)) {
+    subCandidates.push(appFrame.locator('a').filter({ hasText: /Loan\/APL\/APS/i }));
+    subCandidates.push(appFrame.locator('a').filter({ hasText: /Manual PS Judgment/i }));
+    subCandidates.push(appFrame.locator('span').filter({ hasText: /Loan\/APL\/APS/i }));
+    subCandidates.push(appFrame.locator('span').filter({ hasText: /Manual PS Judgment/i }));
   }
-
   await clickFirstAvailable(page, subCandidates, subMenu);
   await page.waitForTimeout(5000);
 }
 
-async function domClick(locator, label) {
-  const first = locator.first();
-  await first.evaluate((element) => {
-    // Ingenium menu anchors may be present but hidden after prior navigation.
-    // Trigger the app's own onclick handler when available, otherwise use native click.
-    if (typeof window.clickedMenu === 'function') {
-      return window.clickedMenu(element);
-    }
-    element.click();
-    return true;
-  });
-  console.log(`Clicked ${label} using DOM onclick fallback`);
-}
-
-async function clickFirstAvailable(page, locators, label) {
-  let lastError;
-
-  for (const locator of locators) {
-    try {
-      const count = await locator.count();
-      if (count === 0) {
-        continue;
-      }
-
-      // Prefer a visible match. Some menus keep several hidden duplicate anchors in DOM.
-      for (let i = 0; i < count; i++) {
-        const item = locator.nth(i);
-        if (await item.isVisible().catch(() => false)) {
-          await safeClick(page, item, label);
-          return;
-        }
-      }
-
-      // If all matches are hidden, use Ingenium's onclick handler directly.
-      await domClick(locator, label);
-      await page.waitForTimeout(5000);
-      return;
-    } catch (error) {
-      lastError = error;
-      console.log(`Locator strategy failed for ${label}: ${error.message}`);
-    }
-  }
-
-  await page.screenshot({ path: `${SCREENSHOT_DIR}/click-unavailable-${sanitizeName(label)}.png`, fullPage: true });
-  throw lastError || new Error(`Locator not found for ${label}`);
-}
-
-function escapeRegExp(text) {
-  return String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 async function findAppFrame(page) {
   return await findFrame(page, async (frame) => {
-    const markers = [
-      'Policy Inquiry',
-      'Agent',
-      'Client',
-      'Billing',
-      'Disbursements',
-      'Medical Claim Inquiry'
-    ];
+    const markers = ['Policy Inquiry', 'Agent', 'Client', 'Billing', 'Disbursements', 'Medical Claim Inquiry'];
     for (const marker of markers) {
-      if (await frame.locator('span,a').filter({ hasText: marker }).count() > 0) {
-        return true;
-      }
+      if (await frame.locator('span,a').filter({ hasText: marker }).count() > 0) return true;
     }
     return false;
   }, 25, 2000);
 }
 
 async function fillVisibleInputs(page, screenName, values) {
-  const frame = await findFrame(page, async (f) => {
-    return await f.locator('input:visible').count() >= values.length;
-  }, 20, 1500);
-
+  const frame = await findFrame(page, async (f) => await f.locator('input:visible').count() >= values.length, 20, 1500);
   const inputs = frame.locator('input:visible');
   const count = await inputs.count();
   console.log(`Found ${count} visible input(s) for ${screenName}. Filling ${values.length} value(s).`);
-
   for (let i = 0; i < values.length; i++) {
     const input = inputs.nth(i);
     await input.waitFor({ state: 'visible', timeout: 10000 });
@@ -266,12 +236,8 @@ async function scrollAndCapture(page, screen, idValue, count = 5) {
     try { await frame.evaluate(() => window.scrollTo(0, 0)); } catch {}
   }
   await page.waitForTimeout(1000);
-
   for (let i = 0; i < count; i++) {
-    await page.screenshot({
-      path: `${SCREENSHOT_DIR}/${prefix}-${idValue}-${i + 1}.png`,
-      fullPage: true
-    });
+    await page.screenshot({ path: `${SCREENSHOT_DIR}/${prefix}-${idValue}-${i + 1}.png`, fullPage: true });
     for (const frame of page.frames()) {
       try { await frame.evaluate(() => window.scrollBy(0, window.innerHeight * 0.85)); } catch {}
     }
@@ -279,92 +245,193 @@ async function scrollAndCapture(page, screen, idValue, count = 5) {
   }
 }
 
-async function runInquiryScreen(page, appFrame, screen) {
-  console.log(`========== Running screen: ${screen.name} ==========`);
-  await clickMenuPath(page, appFrame, screen.mainMenu, screen.subMenu, screen.subMenuAliases || []);
-  await fillVisibleInputs(page, screen.name, screen.values);
-  await page.screenshot({
-    path: `${SCREENSHOT_DIR}/screen-${String(screen.screenNo).padStart(2, '0')}-${sanitizeName(screen.name)}-before-ok.png`,
-    fullPage: true
-  });
-  await clickOkFromAnyFrame(page, screen.name);
-  await page.waitForTimeout(screen.waitAfterOkMs || 7000);
-  await scrollAndCapture(page, screen, screen.values.join('-'), screen.captureCount || 5);
-  console.log(`========== Completed screen: ${screen.name} ==========`);
+
+function parseSelectedScreens(selection) {
+  const source = String(selection || '1-20').trim();
+  if (/^all$/i.test(source)) return Array.from({ length: 20 }, (_, i) => i + 1);
+  const selected = new Set();
+  for (const token of source.split(',').map((item) => item.trim()).filter(Boolean)) {
+    const range = token.match(/^(\d+)\s*-\s*(\d+)$/);
+    if (range) {
+      const start = Number(range[1]);
+      const end = Number(range[2]);
+      if (start > end) throw new Error(`Invalid screen range: ${token}`);
+      for (let value = start; value <= end; value++) selected.add(value);
+    } else if (/^\d+$/.test(token)) {
+      selected.add(Number(token));
+    } else {
+      throw new Error(`Invalid screen selection token: ${token}`);
+    }
+  }
+  const values = [...selected].sort((a, b) => a - b);
+  if (!values.length) throw new Error('No screens were selected.');
+  const invalid = values.filter((value) => value < 1 || value > 20);
+  if (invalid.length) throw new Error(`Screen numbers must be between 1 and 20. Invalid: ${invalid.join(', ')}`);
+  return values;
 }
 
-test('Ingenium extended multi-screen smoke flow', async ({ page }) => {
+async function collectVisiblePageText(page) {
+  const chunks = [];
+  for (const frame of page.frames()) {
+    try {
+      const text = await frame.locator('body').innerText({ timeout: 3000 });
+      if (text && text.trim()) chunks.push(text.trim());
+    } catch {}
+  }
+  return chunks.join('\n');
+}
+
+async function runInquiryScreen(page, appFrame, screen) {
+  const startedAt = new Date();
+  const result = {
+    screenNo: screen.screenNo,
+    name: screen.name,
+    input: screen.values.join(', '),
+    status: 'FAILED',
+    detail: '',
+    durationSeconds: 0
+  };
+
+  console.log(`========== Running screen: ${screen.name} ==========`);
+  try {
+    await clickMenuPath(page, appFrame, screen.mainMenu, screen.subMenu, screen.subMenuAliases || []);
+    await fillVisibleInputs(page, screen.name, screen.values);
+    await page.screenshot({ path: `${SCREENSHOT_DIR}/screen-${String(screen.screenNo).padStart(2, '0')}-${sanitizeName(screen.name)}-before-ok.png`, fullPage: true });
+    await clickOkFromAnyFrame(page, screen.name);
+    await page.waitForTimeout(screen.waitAfterOkMs || 7000);
+
+    const resultText = await collectVisiblePageText(page);
+    const noRecordsPattern = /NO\s+RECORDS?\s+(?:FOUND\s+)?TO\s+DISPLAY|NO\s+RECORDS?\s+FOUND|NO\s+DATA\s+FOUND|NO\s+MATCHING\s+RECORDS?/i;
+    if (noRecordsPattern.test(resultText)) {
+      result.status = 'NO_RECORDS';
+      result.detail = 'Screen opened successfully, but the selected input returned no records to display.';
+      console.log(`NO_RECORDS detected for ${screen.name}`);
+    } else {
+      result.status = 'PASSED';
+      result.detail = 'Screen completed and result page was displayed.';
+    }
+
+    await scrollAndCapture(page, screen, screen.values.join('-'), screen.captureCount || 5);
+    console.log(`========== Completed screen: ${screen.name} (${result.status}) ==========`);
+  } catch (error) {
+    result.status = 'FAILED';
+    result.detail = String(error && error.message ? error.message : error).replace(/\s+/g, ' ').slice(0, 700);
+    console.log(`SCREEN FAILED: ${screen.name}: ${result.detail}`);
+    await page.screenshot({
+      path: `${SCREENSHOT_DIR}/screen-${String(screen.screenNo).padStart(2, '0')}-${sanitizeName(screen.name)}-failed.png`,
+      fullPage: true
+    }).catch(() => {});
+  }
+
+  result.durationSeconds = Math.round((Date.now() - startedAt.getTime()) / 1000);
+  return result;
+}
+
+async function optionalCredentialLogin(page) {
+  // U2 SSO behavior:
+  // 1. Browser/domain authentication is handled by Playwright httpCredentials and/or curl SPNEGO cookie bridge.
+  // 2. Click English Sign On.
+  // 3. Ingenium shows Sign-On Connect with User Status = Connected.
+  // 4. Click OK. Do not use GOCC / ingenium application credentials for U2 SSO.
+  const english = page.getByText('English Sign On', { exact: true });
+  if (await english.isVisible().catch(() => false)) {
+    await english.click();
+    console.log('Clicked English Sign On');
+    await page.waitForTimeout(5000);
+  } else {
+    console.log('English Sign On link not visible. Continuing to Sign-On Connect or app frame.');
+  }
+
+  await page.screenshot({ path: `${SCREENSHOT_DIR}/03-after-english-sign-on.png`, fullPage: true });
+  const signOnText = await page.locator('body').innerText({ timeout: 5000 }).catch(() => '');
+  fs.writeFileSync(`${SCREENSHOT_DIR}/03-after-english-sign-on-text.txt`, signOnText, 'utf8');
+
+  const connectVisible = page.getByText(/Sign-On Connect|User Status|Connected/i);
+  if (await connectVisible.first().isVisible().catch(() => false)) {
+    console.log('Sign-On Connect page visible. Clicking OK to enter Ingenium application.');
+    await clickOkFromAnyFrame(page, 'Sign-On Connect');
+    await page.waitForTimeout(7000);
+    await page.screenshot({ path: `${SCREENSHOT_DIR}/04-after-signon-connect-ok.png`, fullPage: true });
+    return;
+  }
+
+  try {
+    await clickOkFromAnyFrame(page, 'possible Sign-On Connect');
+    await page.waitForTimeout(7000);
+    await page.screenshot({ path: `${SCREENSHOT_DIR}/04-after-possible-signon-ok.png`, fullPage: true });
+  } catch {
+    console.log('No Sign-On Connect OK button found. Continuing to app frame detection.');
+  }
+}
+
+test('U2 SSO cookie bridge plus Ingenium 20 screen flow', async ({ page, context }) => {
+  test.setTimeout(3600000);
   ensureScreenshotDir();
 
   const BASE_URL = process.env.APP_URL;
-  const USERNAME = process.env.APP_USERNAME;
-  const PASSWORD = process.env.APP_PASSWORD;
-  const COMPANY = process.env.COMPANY || 'Manulife';
-
   expect(BASE_URL).toBeTruthy();
-  expect(USERNAME).toBeTruthy();
-  expect(PASSWORD).toBeTruthy();
 
-  const AGT_ID = db2Value('AGT_ID', "SELECT AGT_ID FROM TAG WHERE CO_ID='CP' LIMIT 1");
-  const CLI_ID = db2Value('CLI_ID', "SELECT CLI_ID FROM TCLI WHERE CO_ID='CP' LIMIT 1");
-  const WL_POL_ID = db2Value('WL_POL_ID', "SELECT POL_ID FROM TPOL WHERE CO_ID='CP' AND PROD_APP_TYP_CD='WL' AND POL_CSTAT_CD='1' LIMIT 1");
-  const FIRM_BANKING_POL_ID = db2Value('FIRM_BANKING_POL_ID', "SELECT POL_ID FROM TFBNK WHERE CO_ID='CP' LIMIT 1");
-  const DEATH_CLM_ID = db2Value('DEATH_CLM_ID', "SELECT CLM_ID FROM TDCLM WHERE CO_ID='CP' AND CLM_STAT_CD='C' LIMIT 1");
-  const MED_CLM_ID = db2Value('MED_CLM_ID', "SELECT CLM_ID FROM TCLBD WHERE CO_ID='CP' LIMIT 1");
-  const REMITTANCE_DATE = process.env.REMITTANCE_DATE || yesterdayDateYYYYMMDD();
-  const APL_POLICY_ID = db2Value('APL_POLICY_ID', "SELECT POL_ID FROM TPOLL WHERE CO_ID='CP' AND POL_LOAN_ID='A' AND LOAN_AMT>'0' LIMIT 1");
-  const CHANGE_HIST_POLICY_ID = db2Value('CHANGE_HIST_POLICY_ID', "SELECT POL_ID FROM TPHST WHERE CO_ID='CP' LIMIT 1");
-  const LOAN_DETAIL_POLICY_ID = db2Value('LOAN_DETAIL_POLICY_ID', "SELECT POL_ID FROM TPOLL WHERE CO_ID='CP' AND POL_LOAN_ID='C' AND LOAN_AMT>'0' LIMIT 1");
+  const AGT_ID = process.env.AGT_ID;
+  const CLI_ID = process.env.CLI_ID;
+  const WL_POL_ID = process.env.WL_POL_ID || process.env.POLICY_ID;
+  const FIRM_BANKING_POL_ID = process.env.FIRM_BANKING_POL_ID;
+  const DEATH_CLM_ID = process.env.DEATH_CLM_ID;
+  const MED_CLM_ID = process.env.MED_CLM_ID;
+  const REMITTANCE_DATE = process.env.REMITTANCE_DATE;
+  const APL_POLICY_ID = process.env.APL_POLICY_ID;
+  const CHANGE_HIST_POLICY_ID = process.env.CHANGE_HIST_POLICY_ID;
+  const LOAN_DETAIL_POLICY_ID = process.env.LOAN_DETAIL_POLICY_ID;
 
-  console.log('START EXTENDED INGENIUM SCREEN TEST');
+  const required = { AGT_ID, CLI_ID, WL_POL_ID, FIRM_BANKING_POL_ID, DEATH_CLM_ID, MED_CLM_ID, REMITTANCE_DATE, APL_POLICY_ID, CHANGE_HIST_POLICY_ID, LOAN_DETAIL_POLICY_ID };
+  for (const [name, value] of Object.entries(required)) expect(value, `${name} must be set by Jenkins DB2 stage`).toBeTruthy();
+
+  const responseLines = [];
+  page.on('response', async (response) => {
+    const status = response.status();
+    const url = response.url();
+    if (status >= 300 || /ping|sso|ingenium|mfcgd/i.test(url)) {
+      responseLines.push(`${status} ${url}`);
+      console.log('RESPONSE:', status, url);
+    }
+  });
+
+  console.log('START U2 SSO PLUS 20 SCREEN FLOW');
   console.log('BASE_URL:', BASE_URL);
-  console.log('AGT_ID:', AGT_ID);
-  console.log('CLI_ID:', CLI_ID);
-  console.log('WL_POL_ID:', WL_POL_ID);
-  console.log('FIRM_BANKING_POL_ID:', FIRM_BANKING_POL_ID);
-  console.log('DEATH_CLM_ID:', DEATH_CLM_ID);
-  console.log('MED_CLM_ID:', MED_CLM_ID);
-  console.log('REMITTANCE_DATE:', REMITTANCE_DATE);
-  console.log('APL_POLICY_ID:', APL_POLICY_ID);
-  console.log('CHANGE_HIST_POLICY_ID:', CHANGE_HIST_POLICY_ID);
-  console.log('LOAN_DETAIL_POLICY_ID:', LOAN_DETAIL_POLICY_ID);
+  console.log('BROWSER: Microsoft Edge on Linux');
+  console.log('KRB_REALM:', process.env.KRB_REALM || 'MFCGD.COM');
+  console.log('COOKIE_JAR:', process.env.COOKIE_JAR || 'not-set');
+  Object.entries(required).forEach(([k, v]) => console.log(`${k}:`, v));
 
+  await loadCurlCookiesIntoContext(context);
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 120000 });
   await page.waitForTimeout(5000);
   await page.screenshot({ path: `${SCREENSHOT_DIR}/01-launch.png`, fullPage: true });
 
-  const english = page.getByText('English Sign On');
-  if (await english.isVisible().catch(() => false)) {
-    await english.click();
-    console.log('Clicked English Sign On');
-  }
-  await page.waitForTimeout(5000);
+  const pageText = await page.locator('body').innerText({ timeout: 5000 }).catch(() => '');
+  fs.writeFileSync(`${SCREENSHOT_DIR}/01-launch-text.txt`, pageText, 'utf8');
+  fs.writeFileSync(`${SCREENSHOT_DIR}/response-log.txt`, responseLines.join('\n'), 'utf8');
 
-  const loginFrame = await findFrame(page, async (f) => await f.locator('input[type="password"]').count() > 0);
-  await loginFrame.locator('input[type="text"]').first().fill(USERNAME);
-  await loginFrame.locator('input[type="password"]').fill(PASSWORD);
-  await loginFrame.locator('select').selectOption({ label: COMPANY });
-  await safeClick(page, loginFrame.getByRole('button', { name: /submit/i }), 'Submit Login');
-  await page.waitForTimeout(6000);
-  await page.screenshot({ path: `${SCREENSHOT_DIR}/02-after-login.png`, fullPage: true });
-
-  try {
-    await clickOkFromAnyFrame(page, 'post-login popup');
-  } catch {
-    console.log('No post-login popup OK found. Continuing.');
+  const spnegoError = page.getByText('SPNEGO authentication is not supported on this client.');
+  if (await spnegoError.isVisible().catch(() => false)) {
+    await page.screenshot({ path: `${SCREENSHOT_DIR}/spnego-not-supported.png`, fullPage: true });
+    throw new Error('SPNEGO page still displayed after cookie bridge.');
   }
 
+  const englishSignOn = page.getByText('English Sign On', { exact: true });
+  if (await englishSignOn.isVisible().catch(() => false)) {
+    console.log('English Sign On page visible');
+    await page.screenshot({ path: `${SCREENSHOT_DIR}/02-english-sign-on-visible.png`, fullPage: true });
+  }
+
+  await optionalCredentialLogin(page);
   const appFrame = await findAppFrame(page);
   console.log('Application menu frame ready');
 
   const screens = [
-    // Original policy inquiry screens retained from the earlier working flow.
     { screenNo: 1, name: 'Policy Inquiry - All Details', mainMenu: 'Policy Inquiry', subMenu: 'Policy Inquiry - All Details', values: [WL_POL_ID], captureCount: 5 },
     { screenNo: 2, name: 'Policy Inquiry - Inquiry Coverage Values', mainMenu: 'Policy Inquiry', subMenu: 'Inquiry - Coverage Values', values: [WL_POL_ID], captureCount: 5 },
     { screenNo: 3, name: 'Policy Inquiry - Inquiry Coverage Details', mainMenu: 'Policy Inquiry', subMenu: 'Inquiry - Coverage Details', values: [WL_POL_ID], captureCount: 6 },
     { screenNo: 4, name: 'Policy Inquiry - Inquiry Call Centre Information', mainMenu: 'Policy Inquiry', subMenu: 'Inquiry - Call Centre Information', values: [WL_POL_ID], captureCount: 6 },
-
-    // Existing DB2-driven inquiry screens.
     { screenNo: 5, name: 'Agent - Agent Inquiry', mainMenu: 'Agent', subMenu: 'Agent Inquiry', values: [AGT_ID], captureCount: 5 },
     { screenNo: 6, name: 'Client - Address List', mainMenu: 'Client', subMenu: 'Address List', values: [CLI_ID], captureCount: 5 },
     { screenNo: 7, name: 'Client - Client Inquiry', mainMenu: 'Client', subMenu: 'Client Inquiry', values: [CLI_ID], captureCount: 5 },
@@ -376,18 +443,62 @@ test('Ingenium extended multi-screen smoke flow', async ({ page }) => {
     { screenNo: 13, name: 'Disbursements - Firm Banking Entries', mainMenu: 'Disbursements', subMenu: 'Firm Banking Entries', values: [REMITTANCE_DATE, FIRM_BANKING_POL_ID], captureCount: 5 },
     { screenNo: 14, name: 'Billing - Billing Activity Inquiry List by Policy', mainMenu: 'Billing', subMenu: 'Billing Activity List', values: [WL_POL_ID], captureCount: 5 },
     { screenNo: 15, name: 'Complex Policy Change - Movement Inquiry', mainMenu: 'Complex Policy Change', subMenu: 'Movement Inquiry', values: [WL_POL_ID], captureCount: 5 },
-
-    // Newly added screens from remaining screens document.
     { screenNo: 16, name: 'Policy History - APL History List', mainMenu: 'Policy History', subMenu: 'APL History', values: [APL_POLICY_ID], captureCount: 5 },
     { screenNo: 17, name: 'Policy History - Change History List', mainMenu: 'Policy History', subMenu: 'Change History List', values: [CHANGE_HIST_POLICY_ID], captureCount: 6 },
     { screenNo: 18, name: 'Policy History - Loan Detail List', mainMenu: 'Policy History', subMenu: 'Loan Detail List', values: [LOAN_DETAIL_POLICY_ID], captureCount: 6 },
     { screenNo: 19, name: 'Policy Inquiry - Inquiry Coverage Premiums', mainMenu: 'Policy Inquiry', subMenu: 'Inquiry - Coverage Premiums', values: [WL_POL_ID], captureCount: 6 },
-    { screenNo: 20, name: 'Policy Inquiry - Inquiry Loan APL APS Manual PS Judgment', mainMenu: 'Policy Inquiry', subMenu: 'Inquiry-Loan/APL/APS/Manual PS Judgment', subMenuAliases: ['Inquiry-Loan/APL/APS/Manual PS Judgment', 'Inquiry - Loan/APL/APS/Manual PS Judgment', 'Inquiry-Loan / APL / APS / Manual PS Judgment', 'Inquiry - Policy Loan Quote, APL or APS Judgment', 'Policy Loan Quote, APL or APS Judgment', 'Loan/APL/APS/Manual PS Judgment', 'Manual PS Judgment'], values: [WL_POL_ID], captureCount: 6 }
+    { screenNo: 20, name: 'Policy Inquiry - Inquiry Loan APL APS Manual PS Judgment', mainMenu: 'Policy Inquiry', subMenu: 'Inquiry-Loan/APL/APS/Manual PS Judgment', subMenuAliases: ['Inquiry - Loan/APL/APS/Manual PS Judgment', 'Inquiry-Loan / APL / APS / Manual PS Judgment', 'Policy Loan Quote, APL or APS Judgment', 'Manual PS Judgment'], values: [WL_POL_ID], captureCount: 6 }
   ];
 
+  const selectedScreenNumbers = parseSelectedScreens(process.env.SELECTED_SCREENS || '1-20');
+  const selectedSet = new Set(selectedScreenNumbers);
+  console.log(`SELECTED SCREENS: ${selectedScreenNumbers.join(', ')}`);
+
+  const screenResults = [];
   for (const screen of screens) {
-    await runInquiryScreen(page, appFrame, screen);
+    if (!selectedSet.has(screen.screenNo)) {
+      screenResults.push({
+        screenNo: screen.screenNo,
+        name: screen.name,
+        input: screen.values.join(', '),
+        status: 'SKIPPED',
+        detail: 'Not selected for this execution.',
+        durationSeconds: 0
+      });
+      continue;
+    }
+    // Re-discover the application frame before each selected screen so one failed screen does not stop later screens.
+    const currentAppFrame = await findAppFrame(page).catch(() => appFrame);
+    screenResults.push(await runInquiryScreen(page, currentAppFrame, screen));
   }
 
-  console.log('ALL EXTENDED INGENIUM SCREENS COMPLETED SUCCESSFULLY');
+  const counts = {
+    available: screens.length,
+    selected: selectedScreenNumbers.length,
+    passed: screenResults.filter((r) => r.status === 'PASSED').length,
+    noRecords: screenResults.filter((r) => r.status === 'NO_RECORDS').length,
+    failed: screenResults.filter((r) => r.status === 'FAILED').length,
+    skipped: screenResults.filter((r) => r.status === 'SKIPPED').length
+  };
+  const summary = {
+    generatedAt: new Date().toISOString(),
+    appUrl: BASE_URL,
+    counts,
+    screens: screenResults
+  };
+  fs.writeFileSync(`${SCREENSHOT_DIR}/screen-summary.json`, JSON.stringify(summary, null, 2), 'utf8');
+  fs.writeFileSync(
+    `${SCREENSHOT_DIR}/screen-summary.txt`,
+    [`Screen Execution Summary`, `Selected: ${counts.selected} / ${counts.available}`, `Passed: ${counts.passed}`, `No Records: ${counts.noRecords}`, `Failed: ${counts.failed}`, `Skipped: ${counts.skipped}`, '',
+      ...screenResults.map((r) => `${String(r.screenNo).padStart(2, '0')} | ${r.status} | ${r.name} | Input: ${r.input} | ${r.detail}`)
+    ].join('\n'),
+    'utf8'
+  );
+
+  console.log(`SCREEN SUMMARY: selected=${counts.selected}/${counts.available}, passed=${counts.passed}, noRecords=${counts.noRecords}, failed=${counts.failed}, skipped=${counts.skipped}`);
+  for (const result of screenResults) console.log(`SCREEN RESULT ${String(result.screenNo).padStart(2, '0')}: ${result.status} - ${result.name}`);
+
+  // Run all 20 screens first. Mark the test failed only after the full summary is written.
+  expect(screenResults.filter((r) => r.status === 'FAILED'), 'One or more Ingenium screens failed. See screen-summary.json and screenshot-report.html.').toEqual([]);
+  console.log('ALL U2 SSO 20 SCREEN FLOWS COMPLETED WITH SUMMARY');
 });
