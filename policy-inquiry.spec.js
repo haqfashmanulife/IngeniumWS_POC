@@ -216,17 +216,48 @@ async function findAppFrame(page) {
 }
 
 async function fillVisibleInputs(page, screenName, values) {
-  const editableSelector = 'input[type="text"]:visible, input[type="number"]:visible, input[type="date"]:visible, input[type="search"]:visible, input:not([type]):visible';
-  const frame = await findFrame(page, async (f) => await f.locator(editableSelector).count() >= values.length, 20, 1500);
-  const inputs = frame.locator(editableSelector);
-  const count = await inputs.count();
-  console.log(`Found ${count} visible input(s) for ${screenName}. Filling ${values.length} value(s).`);
-  for (let i = 0; i < values.length; i++) {
-    const input = inputs.nth(i);
+  const inputSelector = 'input:visible:not([type="image"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="checkbox"]):not([type="radio"]):not([type="hidden"])';
+
+  const frame = await findFrame(page, async (candidateFrame) => {
+    const candidates = candidateFrame.locator(inputSelector);
+    const count = await candidates.count();
+    let editableCount = 0;
+
+    for (let index = 0; index < count; index++) {
+      const candidate = candidates.nth(index);
+      if (await candidate.isVisible().catch(() => false) &&
+          await candidate.isEditable().catch(() => false)) {
+        editableCount++;
+      }
+    }
+
+    return editableCount >= values.length;
+  }, 30, 1500);
+
+  const candidates = frame.locator(inputSelector);
+  const count = await candidates.count();
+  const editableInputs = [];
+
+  for (let index = 0; index < count; index++) {
+    const candidate = candidates.nth(index);
+    if (await candidate.isVisible().catch(() => false) &&
+        await candidate.isEditable().catch(() => false)) {
+      editableInputs.push(candidate);
+    }
+  }
+
+  console.log(`Found ${editableInputs.length} editable input(s) for ${screenName}. Filling ${values.length} value(s).`);
+
+  if (editableInputs.length < values.length) {
+    throw new Error(`Expected ${values.length} editable input(s) for ${screenName}, but found ${editableInputs.length}.`);
+  }
+
+  for (let index = 0; index < values.length; index++) {
+    const input = editableInputs[index];
     await input.waitFor({ state: 'visible', timeout: 10000 });
     await input.click({ timeout: 5000 });
-    await input.fill(String(values[i]), { timeout: 10000 });
-    console.log(`Filled input ${i + 1} for ${screenName} with value ${values[i]}`);
+    await input.fill(String(values[index]), { timeout: 10000 });
+    console.log(`Filled input ${index + 1} for ${screenName} with value ${values[index]}`);
   }
 }
 
