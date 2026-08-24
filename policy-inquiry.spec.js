@@ -217,48 +217,15 @@ async function findAppFrame(page) {
 
 async function fillVisibleInputs(page, screenName, values) {
   const inputSelector = 'input:visible:not([type="image"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="checkbox"]):not([type="radio"]):not([type="hidden"])';
-
-  const frame = await findFrame(page, async (candidateFrame) => {
-    const candidates = candidateFrame.locator(inputSelector);
-    const count = await candidates.count();
-    let editableCount = 0;
-
-    for (let index = 0; index < count; index++) {
-      const candidate = candidates.nth(index);
-      if (await candidate.isVisible().catch(() => false) &&
-          await candidate.isEditable().catch(() => false)) {
-        editableCount++;
-      }
-    }
-
-    return editableCount >= values.length;
-  }, 30, 1500);
-
-  const candidates = frame.locator(inputSelector);
-  const count = await candidates.count();
-  const editableInputs = [];
-
-  for (let index = 0; index < count; index++) {
-    const candidate = candidates.nth(index);
-    if (await candidate.isVisible().catch(() => false) &&
-        await candidate.isEditable().catch(() => false)) {
-      editableInputs.push(candidate);
-    }
-  }
-
-  console.log(`Found ${editableInputs.length} editable input(s) for ${screenName}. Filling ${values.length} value(s).`);
-
-  if (editableInputs.length < values.length) {
-    throw new Error(`Expected ${values.length} editable input(s) for ${screenName}, but found ${editableInputs.length}.`);
-  }
-
-  for (let index = 0; index < values.length; index++) {
-    const input = editableInputs[index];
-    await input.waitFor({ state: 'visible', timeout: 10000 });
-    await input.click({ timeout: 5000 });
-    await input.fill(String(values[index]), { timeout: 10000 });
-    console.log(`Filled input ${index + 1} for ${screenName} with value ${values[index]}`);
-  }
+  const frame = await findFrame(page, async (f) => {
+    const items=f.locator(inputSelector); let editable=0;
+    for(let i=0;i<await items.count();i++) if(await items.nth(i).isEditable().catch(()=>false)) editable++;
+    return editable>=values.length;
+  },30,1500);
+  const items=frame.locator(inputSelector), inputs=[];
+  for(let i=0;i<await items.count();i++) if(await items.nth(i).isEditable().catch(()=>false)) inputs.push(items.nth(i));
+  if(inputs.length<values.length) throw new Error(`Expected ${values.length} editable inputs for ${screenName}, found ${inputs.length}`);
+  for(let i=0;i<values.length;i++){ await inputs[i].fill(String(values[i]),{timeout:10000}); console.log(`Filled input ${i+1} for ${screenName}`); }
 }
 
 async function scrollAndCapture(page, screen, idValue, count = 5) {
@@ -326,49 +293,17 @@ async function optionalCredentialLogin(page, workerTag) {
 }
 
 
-function parseSelectedScreens(value) {
-  const out = new Set();
-  for (const token of String(value || '1-20').split(',').map(v => v.trim()).filter(Boolean)) {
-    const range = token.match(/^(\d+)\s*-\s*(\d+)$/);
-    if (range) {
-      const a=Number(range[1]), b=Number(range[2]);
-      if (a > b) throw new Error(`Invalid range: ${token}`);
-      for (let n=a; n<=b; n++) out.add(n);
-    } else if (/^\d+$/.test(token)) out.add(Number(token));
-    else throw new Error(`Invalid screen token: ${token}`);
-  }
-  const nums=[...out].sort((a,b)=>a-b);
-  if (!nums.length || nums.some(n=>n<1 || n>20)) throw new Error('Screens must be between 1 and 20');
-  return nums;
-}
-function chunk(values, size=2) { const out=[]; for(let i=0;i<values.length;i+=size) out.push(values.slice(i,i+size)); return out; }
-const SELECTED = parseSelectedScreens(process.env.SELECTED_SCREENS);
-const GROUPS = chunk(SELECTED, 2);
-console.log(`Selected SSO screens: ${SELECTED.join(', ')}`);
-console.log(`Parallel browser groups: ${GROUPS.map(g=>`[${g.join(',')}]`).join(' ')}`);
-test.describe.configure({ mode: 'parallel' });
-
-for (const [groupIndex, assigned] of GROUPS.entries()) {
-  test(`U2 SSO browser ${groupIndex+1} - screens ${assigned.join(', ')}`, async ({page, context}, testInfo) => {
-    test.setTimeout(3600000); ensureScreenshotDir();
-    const BASE_URL=process.env.APP_URL;
-    const AGT_ID=process.env.AGT_ID, CLI_ID=process.env.CLI_ID;
-    const WL_POL_ID=process.env.WL_POL_ID || process.env.POLICY_ID;
-    const FIRM_BANKING_POL_ID=process.env.FIRM_BANKING_POL_ID, DEATH_CLM_ID=process.env.DEATH_CLM_ID;
-    const MED_CLM_ID=process.env.MED_CLM_ID, REMITTANCE_DATE=process.env.REMITTANCE_DATE;
-    const APL_POLICY_ID=process.env.APL_POLICY_ID, CHANGE_HIST_POLICY_ID=process.env.CHANGE_HIST_POLICY_ID;
-    const LOAN_DETAIL_POLICY_ID=process.env.LOAN_DETAIL_POLICY_ID;
-    const required={AGT_ID,CLI_ID,WL_POL_ID,FIRM_BANKING_POL_ID,DEATH_CLM_ID,MED_CLM_ID,REMITTANCE_DATE,APL_POLICY_ID,CHANGE_HIST_POLICY_ID,LOAN_DETAIL_POLICY_ID};
-    expect(BASE_URL).toBeTruthy(); for (const [k,v] of Object.entries(required)) expect(v,`${k} missing`).toBeTruthy();
-    const workerTag=`worker-${testInfo.parallelIndex}-group-${groupIndex+1}`;
-    const cookieJar=`${process.env.COOKIE_JAR_PREFIX}-${groupIndex+1}.txt`;
-    await loadCurlCookiesIntoContext(context, cookieJar);
-    await page.goto(BASE_URL, {waitUntil:'domcontentloaded',timeout:120000});
-    await page.waitForTimeout(5000);
-    await page.screenshot({path:`${SCREENSHOT_DIR}/${workerTag}-01-launch.png`,fullPage:true});
-    await optionalCredentialLogin(page, workerTag);
-    const appFrame=await findAppFrame(page);
-    const screens=[
+function parseSelectedScreens(raw){const out=new Set();for(const t of String(raw||'1-20').split(',').map(x=>x.trim()).filter(Boolean)){const m=t.match(/^(\d+)\s*-\s*(\d+)$/);if(m){for(let n=+m[1];n<=+m[2];n++)out.add(n)}else if(/^\d+$/.test(t))out.add(+t);else throw new Error(`Invalid screen: ${t}`)}const a=[...out].sort((x,y)=>x-y);if(!a.length||a.some(n=>n<1||n>20))throw new Error('Screens must be 1-20');return a}
+function chunk(a,n=2){const r=[];for(let i=0;i<a.length;i+=n)r.push(a.slice(i,i+n));return r}
+const SELECTED=parseSelectedScreens(process.env.SELECTED_SCREENS), GROUPS=chunk(SELECTED,2);
+console.log(`Selected SSO screens: ${SELECTED.join(', ')}`); console.log(`Parallel browser groups: ${GROUPS.map(x=>`[${x}]`).join(' ')}`);
+test.describe.configure({mode:'parallel'});
+for(const [groupIndex,assigned] of GROUPS.entries()){
+ test(`U2 SSO browser ${groupIndex+1} - screens ${assigned.join(', ')}`,async({page,context},testInfo)=>{
+  test.setTimeout(3600000);ensureScreenshotDir();const BASE_URL=process.env.APP_URL;
+  const AGT_ID=process.env.AGT_ID,CLI_ID=process.env.CLI_ID,WL_POL_ID=process.env.WL_POL_ID||process.env.POLICY_ID,FIRM_BANKING_POL_ID=process.env.FIRM_BANKING_POL_ID,DEATH_CLM_ID=process.env.DEATH_CLM_ID,MED_CLM_ID=process.env.MED_CLM_ID,REMITTANCE_DATE=process.env.REMITTANCE_DATE,APL_POLICY_ID=process.env.APL_POLICY_ID,CHANGE_HIST_POLICY_ID=process.env.CHANGE_HIST_POLICY_ID,LOAN_DETAIL_POLICY_ID=process.env.LOAN_DETAIL_POLICY_ID;
+  const workerTag=`worker-${testInfo.parallelIndex}-group-${groupIndex+1}`;await loadCurlCookiesIntoContext(context,`${process.env.COOKIE_JAR_PREFIX}-${groupIndex+1}.txt`);await page.goto(BASE_URL,{waitUntil:'domcontentloaded',timeout:120000});await page.waitForTimeout(5000);await optionalCredentialLogin(page,workerTag);const appFrame=await findAppFrame(page);
+  const screens=[
     { screenNo: 1, name: 'Policy Inquiry - All Details', mainMenu: 'Policy Inquiry', subMenu: 'Policy Inquiry - All Details', values: [WL_POL_ID], captureCount: 5 },
     { screenNo: 2, name: 'Policy Inquiry - Inquiry Coverage Values', mainMenu: 'Policy Inquiry', subMenu: 'Inquiry - Coverage Values', values: [WL_POL_ID], captureCount: 5 },
     { screenNo: 3, name: 'Policy Inquiry - Inquiry Coverage Details', mainMenu: 'Policy Inquiry', subMenu: 'Inquiry - Coverage Details', values: [WL_POL_ID], captureCount: 6 },
@@ -389,14 +324,8 @@ for (const [groupIndex, assigned] of GROUPS.entries()) {
     { screenNo: 18, name: 'Policy History - Loan Detail List', mainMenu: 'Policy History', subMenu: 'Loan Detail List', values: [LOAN_DETAIL_POLICY_ID], captureCount: 6 },
     { screenNo: 19, name: 'Policy Inquiry - Inquiry Coverage Premiums', mainMenu: 'Policy Inquiry', subMenu: 'Inquiry - Coverage Premiums', values: [WL_POL_ID], captureCount: 6 },
     { screenNo: 20, name: 'Policy Inquiry - Inquiry Loan APL APS Manual PS Judgment', mainMenu: 'Policy Inquiry', subMenu: 'Inquiry-Loan/APL/APS/Manual PS Judgment', subMenuAliases: ['Inquiry - Loan/APL/APS/Manual PS Judgment', 'Inquiry-Loan / APL / APS / Manual PS Judgment', 'Policy Loan Quote, APL or APS Judgment', 'Manual PS Judgment'], values: [WL_POL_ID], captureCount: 6 }
-  ];
-    const results=[];
-    for (const screen of screens.filter(s=>assigned.includes(s.screenNo))) {
-      const started=Date.now();
-      try { await runInquiryScreen(page,appFrame,screen); results.push({screenNo:screen.screenNo,name:screen.name,status:'PASSED',detail:'Completed',durationSeconds:Math.round((Date.now()-started)/1000)}); }
-      catch(error) { results.push({screenNo:screen.screenNo,name:screen.name,status:'FAILED',detail:String(error?.message||error).replace(/\s+/g,' ').slice(0,700),durationSeconds:Math.round((Date.now()-started)/1000)}); }
-    }
-    fs.writeFileSync(`${SCREENSHOT_DIR}/screen-summary-${workerTag}.json`,JSON.stringify({workerTag,assigned,results},null,2));
-    expect(results.filter(r=>r.status==='FAILED'),`${workerTag} failed`).toEqual([]);
-  });
+  ];const results=[];
+  for(const screen of screens.filter(x=>assigned.includes(x.screenNo))){const started=Date.now();try{await runInquiryScreen(page,appFrame,screen);results.push({screenNo:screen.screenNo,name:screen.name,input:screen.values.join(', '),status:'PASSED',detail:'Completed',durationSeconds:Math.round((Date.now()-started)/1000)})}catch(e){results.push({screenNo:screen.screenNo,name:screen.name,input:screen.values.join(', '),status:'FAILED',detail:String(e?.message||e),durationSeconds:Math.round((Date.now()-started)/1000)})}}
+  fs.writeFileSync(`${SCREENSHOT_DIR}/screen-summary-${workerTag}.json`,JSON.stringify({results},null,2));expect(results.filter(x=>x.status==='FAILED')).toEqual([])
+ })
 }

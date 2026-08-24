@@ -7,8 +7,7 @@ const usernameForHttp = rawUsername.includes('\\') || rawUsername.includes('@')
   ? rawUsername
   : `${domain}\\${rawUsername}`;
 
-const requestedWorkers=Number(process.env.PLAYWRIGHT_WORKERS || '2');
-const workerCount=Math.max(1,Math.min(requestedWorkers,10));
+const workerCount=Math.max(1,Math.min(Number(process.env.PLAYWRIGHT_WORKERS||'2'),10));
 const spnegoAllowlist = '*mfcgd.com,azlapdnpingjp01.mfcgd.com';
 
 export default defineConfig({
