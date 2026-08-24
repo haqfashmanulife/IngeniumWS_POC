@@ -327,44 +327,76 @@ async function runInquiryScreen(page, appFrame, screen) {
   return result;
 }
 
-async function optionalCredentialLogin(page) {
-  // U2 SSO behavior:
-  // 1. Browser/domain authentication is handled by Playwright httpCredentials and/or curl SPNEGO cookie bridge.
-  // 2. Click English Sign On.
-  // 3. Ingenium shows Sign-On Connect with User Status = Connected.
-  // 4. Click OK. Do not use GOCC / ingenium application credentials for U2 SSO.
+async function applicationCredentialLogin(page) {
+  const company = process.env.COMPANY || 'Manulife';
+  const username = process.env.APP_USERNAME || process.env.APP_LOGIN_USERNAME || '';
+  const password = process.env.APP_PASSWORD || process.env.APP_LOGIN_PASSWORD || '';
+
+  if (!username || !password) {
+    throw new Error('Non-SSO login requires APP_USERNAME and APP_PASSWORD from Jenkins credentials.');
+  }
+
   const english = page.getByText('English Sign On', { exact: true });
   if (await english.isVisible().catch(() => false)) {
     await english.click();
     console.log('Clicked English Sign On');
     await page.waitForTimeout(5000);
-  } else {
-    console.log('English Sign On link not visible. Continuing to Sign-On Connect or app frame.');
   }
 
-  await page.screenshot({ path: `${SCREENSHOT_DIR}/03-after-english-sign-on.png`, fullPage: true });
-  const signOnText = await page.locator('body').innerText({ timeout: 5000 }).catch(() => '');
-  fs.writeFileSync(`${SCREENSHOT_DIR}/03-after-english-sign-on-text.txt`, signOnText, 'utf8');
+  const loginFrame = await findFrame(page, async (frame) =>
+    await frame.locator('input[type="password"]:visible').count() > 0,
+    15,
+    1500
+  );
+  console.log('Non-SSO application login frame found');
 
-  const connectVisible = page.getByText(/Sign-On Connect|User Status|Connected/i);
-  if (await connectVisible.first().isVisible().catch(() => false)) {
-    console.log('Sign-On Connect page visible. Clicking OK to enter Ingenium application.');
-    await clickOkFromAnyFrame(page, 'Sign-On Connect');
-    await page.waitForTimeout(7000);
-    await page.screenshot({ path: `${SCREENSHOT_DIR}/04-after-signon-connect-ok.png`, fullPage: true });
-    return;
+  const usernameCandidates = [
+    loginFrame.locator('input[type="text"]:visible'),
+    loginFrame.locator('input:not([type]):visible'),
+    loginFrame.locator('input[name*="user" i]:visible'),
+    loginFrame.locator('input[id*="user" i]:visible'),
+    loginFrame.locator('input[name*="login" i]:visible')
+  ];
+
+  let usernameField = null;
+  for (const candidate of usernameCandidates) {
+    if (await candidate.count() > 0) {
+      usernameField = candidate.first();
+      break;
+    }
   }
+  if (!usernameField) throw new Error('Visible application username field was not found.');
+
+  await usernameField.fill(username, { timeout: 10000 });
+  await loginFrame.locator('input[type="password"]:visible').first().fill(password, { timeout: 10000 });
+
+  const companySelect = loginFrame.locator('select').first();
+  if (await companySelect.count() > 0) {
+    await companySelect.selectOption({ label: company }).catch(async () => {
+      await companySelect.selectOption(company).catch(() => {});
+    });
+  }
+
+  const submitCandidates = [
+    loginFrame.getByRole('button', { name: /submit/i }),
+    loginFrame.locator('input[type="submit"]'),
+    loginFrame.locator('input[value*="Submit" i]'),
+    loginFrame.locator('input[type="image"][alt*="submit" i]')
+  ];
+  await clickFirstAvailable(page, submitCandidates, 'Submit Login');
+  console.log('Clicked Submit Login');
+  await page.waitForTimeout(6000);
+  await page.screenshot({ path: `${SCREENSHOT_DIR}/03-after-credential-login.png`, fullPage: true });
 
   try {
-    await clickOkFromAnyFrame(page, 'possible Sign-On Connect');
-    await page.waitForTimeout(7000);
-    await page.screenshot({ path: `${SCREENSHOT_DIR}/04-after-possible-signon-ok.png`, fullPage: true });
+    await clickOkFromAnyFrame(page, 'post-login popup');
   } catch {
-    console.log('No Sign-On Connect OK button found. Continuing to app frame detection.');
+    console.log('No post-login popup was displayed.');
   }
+  await page.waitForTimeout(6000);
 }
 
-test('U2 SSO cookie bridge plus Ingenium 20 screen flow', async ({ page, context }) => {
+test('Ingenium selectable non-SSO multi-screen flow' , async ({ page, context }) => {
   test.setTimeout(3600000);
   ensureScreenshotDir();
 
@@ -395,14 +427,11 @@ test('U2 SSO cookie bridge plus Ingenium 20 screen flow', async ({ page, context
     }
   });
 
-  console.log('START U2 SSO PLUS 20 SCREEN FLOW');
+  console.log('START INGENIUM SELECTABLE NON-SSO SCREEN FLOW');
   console.log('BASE_URL:', BASE_URL);
-  console.log('BROWSER: Microsoft Edge on Linux');
-  console.log('KRB_REALM:', process.env.KRB_REALM || 'MFCGD.COM');
-  console.log('COOKIE_JAR:', process.env.COOKIE_JAR || 'not-set');
+  console.log('BROWSER: Chromium on Linux');
   Object.entries(required).forEach(([k, v]) => console.log(`${k}:`, v));
 
-  await loadCurlCookiesIntoContext(context);
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 120000 });
   await page.waitForTimeout(5000);
   await page.screenshot({ path: `${SCREENSHOT_DIR}/01-launch.png`, fullPage: true });
@@ -411,11 +440,6 @@ test('U2 SSO cookie bridge plus Ingenium 20 screen flow', async ({ page, context
   fs.writeFileSync(`${SCREENSHOT_DIR}/01-launch-text.txt`, pageText, 'utf8');
   fs.writeFileSync(`${SCREENSHOT_DIR}/response-log.txt`, responseLines.join('\n'), 'utf8');
 
-  const spnegoError = page.getByText('SPNEGO authentication is not supported on this client.');
-  if (await spnegoError.isVisible().catch(() => false)) {
-    await page.screenshot({ path: `${SCREENSHOT_DIR}/spnego-not-supported.png`, fullPage: true });
-    throw new Error('SPNEGO page still displayed after cookie bridge.');
-  }
 
   const englishSignOn = page.getByText('English Sign On', { exact: true });
   if (await englishSignOn.isVisible().catch(() => false)) {
@@ -423,7 +447,7 @@ test('U2 SSO cookie bridge plus Ingenium 20 screen flow', async ({ page, context
     await page.screenshot({ path: `${SCREENSHOT_DIR}/02-english-sign-on-visible.png`, fullPage: true });
   }
 
-  await optionalCredentialLogin(page);
+  await applicationCredentialLogin(page);
   const appFrame = await findAppFrame(page);
   console.log('Application menu frame ready');
 
@@ -500,5 +524,5 @@ test('U2 SSO cookie bridge plus Ingenium 20 screen flow', async ({ page, context
 
   // Run all 20 screens first. Mark the test failed only after the full summary is written.
   expect(screenResults.filter((r) => r.status === 'FAILED'), 'One or more Ingenium screens failed. See screen-summary.json and screenshot-report.html.').toEqual([]);
-  console.log('ALL U2 SSO 20 SCREEN FLOWS COMPLETED WITH SUMMARY');
+  console.log('ALL SELECTED NON-SSO SCREEN FLOWS COMPLETED WITH SUMMARY');
 });
