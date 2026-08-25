@@ -1,4 +1,4 @@
-// PRIVACY_MASK_APPLIED_TO_WORKING_NON_SSO_SPEC
+// PARALLEL_10_BROWSERS_2_SCREENS_EACH
 import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import { captureMaskedScreenshot, maskedArtifactValue, maskSummaryInput } from './privacy-mask.js';
@@ -288,22 +288,18 @@ async function returnToApplicationMenu(page, screenName) {
   try {
     await clickOkFromAnyFrame(page, `return from ${screenName}`);
   } catch (error) {
-    console.log(`Return OK was not available for ${screenName}: ${error.message}`);
+    console.log(`Return OK unavailable after ${screenName}: ${error.message}`);
   }
   await page.waitForTimeout(5000);
-  let menuFrame = await findAppFrame(page).catch(() => null);
-  if (menuFrame) {
-    console.log(`Application menu restored after ${screenName}`);
-    return menuFrame;
-  }
+  let frame = await findAppFrame(page).catch(() => null);
+  if (frame) return frame;
   try {
     await clickOkFromAnyFrame(page, `second return from ${screenName}`);
     await page.waitForTimeout(5000);
   } catch {}
-  menuFrame = await findAppFrame(page).catch(() => null);
-  if (!menuFrame) throw new Error(`Application menu was not restored after ${screenName}`);
-  console.log(`Application menu restored after second close for ${screenName}`);
-  return menuFrame;
+  frame = await findAppFrame(page).catch(() => null);
+  if (!frame) throw new Error(`Application menu was not restored after ${screenName}`);
+  return frame;
 }
 
 async function runInquiryScreen(page, appFrame, screen) {
@@ -425,133 +421,93 @@ async function applicationCredentialLogin(page) {
   await page.waitForTimeout(6000);
 }
 
-test('Ingenium selectable non-SSO multi-screen flow' , async ({ page, context }) => {
-  test.setTimeout(3600000);
-  ensureScreenshotDir();
+const SCREEN_PAIRS = Array.from({ length: 10 }, (_, index) => ({
+  pairNo: index + 1,
+  start: index * 2 + 1,
+  end: index * 2 + 2
+}));
 
-  const BASE_URL = process.env.APP_URL;
-  expect(BASE_URL).toBeTruthy();
+test.describe.configure({ mode: 'parallel' });
 
-  const AGT_ID = process.env.AGT_ID;
-  const CLI_ID = process.env.CLI_ID;
-  const WL_POL_ID = process.env.WL_POL_ID || process.env.POLICY_ID;
-  const FIRM_BANKING_POL_ID = process.env.FIRM_BANKING_POL_ID;
-  const DEATH_CLM_ID = process.env.DEATH_CLM_ID;
-  const MED_CLM_ID = process.env.MED_CLM_ID;
-  const REMITTANCE_DATE = process.env.REMITTANCE_DATE;
-  const APL_POLICY_ID = process.env.APL_POLICY_ID;
-  const CHANGE_HIST_POLICY_ID = process.env.CHANGE_HIST_POLICY_ID;
-  const LOAN_DETAIL_POLICY_ID = process.env.LOAN_DETAIL_POLICY_ID;
+for (const pair of SCREEN_PAIRS) {
+  test(`Ingenium screens ${String(pair.start).padStart(2, '0')}-${String(pair.end).padStart(2, '0')}`, async ({ page }) => {
+    test.setTimeout(3600000);
+    ensureScreenshotDir();
 
-  const required = { AGT_ID, CLI_ID, WL_POL_ID, FIRM_BANKING_POL_ID, DEATH_CLM_ID, MED_CLM_ID, REMITTANCE_DATE, APL_POLICY_ID, CHANGE_HIST_POLICY_ID, LOAN_DETAIL_POLICY_ID };
-  for (const [name, value] of Object.entries(required)) expect(value, `${name} must be set by Jenkins DB2 stage`).toBeTruthy();
+    const BASE_URL = process.env.APP_URL;
+    expect(BASE_URL).toBeTruthy();
 
-  const responseLines = [];
-  page.on('response', async (response) => {
-    const status = response.status();
-    const url = response.url();
-    if (status >= 300 || /ping|sso|ingenium|mfcgd/i.test(url)) {
-      responseLines.push(`${status} ${url}`);
-      console.log('RESPONSE:', status, url);
+    const AGT_ID = process.env.AGT_ID;
+    const CLI_ID = process.env.CLI_ID;
+    const WL_POL_ID = process.env.WL_POL_ID || process.env.POLICY_ID;
+    const FIRM_BANKING_POL_ID = process.env.FIRM_BANKING_POL_ID;
+    const DEATH_CLM_ID = process.env.DEATH_CLM_ID;
+    const MED_CLM_ID = process.env.MED_CLM_ID;
+    const REMITTANCE_DATE = process.env.REMITTANCE_DATE;
+    const APL_POLICY_ID = process.env.APL_POLICY_ID;
+    const CHANGE_HIST_POLICY_ID = process.env.CHANGE_HIST_POLICY_ID;
+    const LOAN_DETAIL_POLICY_ID = process.env.LOAN_DETAIL_POLICY_ID;
+
+    const required = { AGT_ID, CLI_ID, WL_POL_ID, FIRM_BANKING_POL_ID, DEATH_CLM_ID, MED_CLM_ID, REMITTANCE_DATE, APL_POLICY_ID, CHANGE_HIST_POLICY_ID, LOAN_DETAIL_POLICY_ID };
+    for (const [name, value] of Object.entries(required)) {
+      expect(value, `${name} must be set by Jenkins DB2 stage`).toBeTruthy();
     }
+
+    const selectedNumbers = parseSelectedScreens(process.env.SELECTED_SCREENS || '1-20');
+    const pairSelected = selectedNumbers.filter((number) => number >= pair.start && number <= pair.end);
+    test.skip(pairSelected.length === 0, `Screens ${pair.start}-${pair.end} were not selected.`);
+
+    console.log(`PAIR ${pair.pairNo}: screens ${pairSelected.join(', ')}`);
+    Object.keys(required).forEach((key) => console.log(`${key}: <masked>`));
+
+    await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 120000 });
+    await page.waitForTimeout(5000);
+    await captureMaskedScreenshot(page, { path: `${SCREENSHOT_DIR}/pair-${pair.pairNo}-01-launch.png`, fullPage: true });
+    await applicationCredentialLogin(page);
+    await findAppFrame(page);
+
+    const screens = [
+      { screenNo: 1, name: 'Policy Inquiry - All Details', mainMenu: 'Policy Inquiry', subMenu: 'Policy Inquiry - All Details', values: [WL_POL_ID], captureCount: 5 },
+      { screenNo: 2, name: 'Policy Inquiry - Inquiry Coverage Values', mainMenu: 'Policy Inquiry', subMenu: 'Inquiry - Coverage Values', values: [WL_POL_ID], captureCount: 5 },
+      { screenNo: 3, name: 'Policy Inquiry - Inquiry Coverage Details', mainMenu: 'Policy Inquiry', subMenu: 'Inquiry - Coverage Details', values: [WL_POL_ID], captureCount: 6 },
+      { screenNo: 4, name: 'Policy Inquiry - Inquiry Call Centre Information', mainMenu: 'Policy Inquiry', subMenu: 'Inquiry - Call Centre Information', values: [WL_POL_ID], captureCount: 6 },
+      { screenNo: 5, name: 'Agent - Agent Inquiry', mainMenu: 'Agent', subMenu: 'Agent Inquiry', values: [AGT_ID], captureCount: 5 },
+      { screenNo: 6, name: 'Client - Address List', mainMenu: 'Client', subMenu: 'Address List', values: [CLI_ID], captureCount: 5 },
+      { screenNo: 7, name: 'Client - Client Inquiry', mainMenu: 'Client', subMenu: 'Client Inquiry', values: [CLI_ID], captureCount: 5 },
+      { screenNo: 8, name: 'Client - Previous Name List', mainMenu: 'Client', subMenu: 'Previous Name List', values: [CLI_ID], captureCount: 5 },
+      { screenNo: 9, name: 'Client Service - Client Inquiry General', mainMenu: 'Client Service', subMenu: 'Client Inquiry - General', values: [CLI_ID], captureCount: 5 },
+      { screenNo: 10, name: 'Client Service - Client Owner Summary', mainMenu: 'Client Service', subMenu: 'Client Owner Summary', values: [CLI_ID], captureCount: 5 },
+      { screenNo: 11, name: 'Medical Claim Inquiry - Master Claim Inquiry', mainMenu: 'Medical Claim Inquiry', subMenu: 'Master Claim Inquiry', values: [MED_CLM_ID], captureCount: 5 },
+      { screenNo: 12, name: 'Death Claims Inquiry - Death Master Claim Inquiry', mainMenu: 'Death Claims Inquiry', subMenu: 'Death Master Claim Inquiry', values: [DEATH_CLM_ID], captureCount: 5 },
+      { screenNo: 13, name: 'Disbursements - Firm Banking Entries', mainMenu: 'Disbursements', subMenu: 'Firm Banking Entries', values: [REMITTANCE_DATE, FIRM_BANKING_POL_ID], captureCount: 5 },
+      { screenNo: 14, name: 'Billing - Billing Activity Inquiry List by Policy', mainMenu: 'Billing', subMenu: 'Billing Activity List', values: [WL_POL_ID], captureCount: 5 },
+      { screenNo: 15, name: 'Complex Policy Change - Movement Inquiry', mainMenu: 'Complex Policy Change', subMenu: 'Movement Inquiry', values: [WL_POL_ID], captureCount: 5 },
+      { screenNo: 16, name: 'Policy History - APL History List', mainMenu: 'Policy History', subMenu: 'APL History', values: [APL_POLICY_ID], captureCount: 5 },
+      { screenNo: 17, name: 'Policy History - Change History List', mainMenu: 'Policy History', subMenu: 'Change History List', values: [CHANGE_HIST_POLICY_ID], captureCount: 6 },
+      { screenNo: 18, name: 'Policy History - Loan Detail List', mainMenu: 'Policy History', subMenu: 'Loan Detail List', values: [LOAN_DETAIL_POLICY_ID], captureCount: 6 },
+      { screenNo: 19, name: 'Policy Inquiry - Inquiry Coverage Premiums', mainMenu: 'Policy Inquiry', subMenu: 'Inquiry - Coverage Premiums', values: [WL_POL_ID], captureCount: 6 },
+      { screenNo: 20, name: 'Policy Inquiry - Inquiry Loan APL APS Manual PS Judgment', mainMenu: 'Policy Inquiry', subMenu: 'Inquiry-Loan/APL/APS/Manual PS Judgment', subMenuAliases: ['Inquiry - Loan/APL/APS/Manual PS Judgment', 'Inquiry-Loan / APL / APS / Manual PS Judgment', 'Policy Loan Quote, APL or APS Judgment', 'Manual PS Judgment'], values: [WL_POL_ID], captureCount: 6 }
+    ];
+
+    const results = [];
+    for (const screen of screens.filter((item) => pairSelected.includes(item.screenNo))) {
+      const freshMenuFrame = await findAppFrame(page);
+      results.push(await runInquiryScreen(page, freshMenuFrame, screen));
+    }
+
+    const summary = {
+      pairNo: pair.pairNo,
+      selectedScreens: pairSelected,
+      screens: results
+    };
+    const pairName = `${String(pair.start).padStart(2, '0')}-${String(pair.end).padStart(2, '0')}`;
+    fs.writeFileSync(`${SCREENSHOT_DIR}/screen-summary-${pairName}.json`, JSON.stringify(summary, null, 2), 'utf8');
+    fs.writeFileSync(
+      `${SCREENSHOT_DIR}/screen-summary-${pairName}.txt`,
+      results.map((result) => `${String(result.screenNo).padStart(2, '0')} | ${result.status} | ${result.name} | Input: ${result.input} | ${result.detail}`).join('\n'),
+      'utf8'
+    );
+
+    expect(results.filter((result) => result.status === 'FAILED'), `One or more screens failed in pair ${pairName}.`).toEqual([]);
   });
-
-  console.log('START INGENIUM SELECTABLE NON-SSO SCREEN FLOW');
-  console.log('BASE_URL:', BASE_URL);
-  console.log('BROWSER: Chromium on Linux');
-  Object.keys(required).forEach((key) => console.log(`${key}: <masked>`));
-
-  await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 120000 });
-  await page.waitForTimeout(5000);
-  await captureMaskedScreenshot(page, { path: `${SCREENSHOT_DIR}/01-launch.png`, fullPage: true });
-
-  const pageText = await page.locator('body').innerText({ timeout: 5000 }).catch(() => '');
-  fs.writeFileSync(`${SCREENSHOT_DIR}/01-launch-text.txt`, pageText, 'utf8');
-  fs.writeFileSync(`${SCREENSHOT_DIR}/response-log.txt`, responseLines.join('\n'), 'utf8');
-
-
-  const englishSignOn = page.getByText('English Sign On', { exact: true });
-  if (await englishSignOn.isVisible().catch(() => false)) {
-    console.log('English Sign On page visible');
-    await captureMaskedScreenshot(page, { path: `${SCREENSHOT_DIR}/02-english-sign-on-visible.png`, fullPage: true });
-  }
-
-  await applicationCredentialLogin(page);
-  const appFrame = await findAppFrame(page);
-  console.log('Application menu frame ready');
-
-  const screens = [
-    { screenNo: 1, name: 'Policy Inquiry - All Details', mainMenu: 'Policy Inquiry', subMenu: 'Policy Inquiry - All Details', values: [WL_POL_ID], captureCount: 5 },
-    { screenNo: 2, name: 'Policy Inquiry - Inquiry Coverage Values', mainMenu: 'Policy Inquiry', subMenu: 'Inquiry - Coverage Values', values: [WL_POL_ID], captureCount: 5 },
-    { screenNo: 3, name: 'Policy Inquiry - Inquiry Coverage Details', mainMenu: 'Policy Inquiry', subMenu: 'Inquiry - Coverage Details', values: [WL_POL_ID], captureCount: 6 },
-    { screenNo: 4, name: 'Policy Inquiry - Inquiry Call Centre Information', mainMenu: 'Policy Inquiry', subMenu: 'Inquiry - Call Centre Information', values: [WL_POL_ID], captureCount: 6 },
-    { screenNo: 5, name: 'Agent - Agent Inquiry', mainMenu: 'Agent', subMenu: 'Agent Inquiry', values: [AGT_ID], captureCount: 5 },
-    { screenNo: 6, name: 'Client - Address List', mainMenu: 'Client', subMenu: 'Address List', values: [CLI_ID], captureCount: 5 },
-    { screenNo: 7, name: 'Client - Client Inquiry', mainMenu: 'Client', subMenu: 'Client Inquiry', values: [CLI_ID], captureCount: 5 },
-    { screenNo: 8, name: 'Client - Previous Name List', mainMenu: 'Client', subMenu: 'Previous Name List', values: [CLI_ID], captureCount: 5 },
-    { screenNo: 9, name: 'Client Service - Client Inquiry General', mainMenu: 'Client Service', subMenu: 'Client Inquiry - General', values: [CLI_ID], captureCount: 5 },
-    { screenNo: 10, name: 'Client Service - Client Owner Summary', mainMenu: 'Client Service', subMenu: 'Client Owner Summary', values: [CLI_ID], captureCount: 5 },
-    { screenNo: 11, name: 'Medical Claim Inquiry - Master Claim Inquiry', mainMenu: 'Medical Claim Inquiry', subMenu: 'Master Claim Inquiry', values: [MED_CLM_ID], captureCount: 5 },
-    { screenNo: 12, name: 'Death Claims Inquiry - Death Master Claim Inquiry', mainMenu: 'Death Claims Inquiry', subMenu: 'Death Master Claim Inquiry', values: [DEATH_CLM_ID], captureCount: 5 },
-    { screenNo: 13, name: 'Disbursements - Firm Banking Entries', mainMenu: 'Disbursements', subMenu: 'Firm Banking Entries', values: [REMITTANCE_DATE, FIRM_BANKING_POL_ID], captureCount: 5 },
-    { screenNo: 14, name: 'Billing - Billing Activity Inquiry List by Policy', mainMenu: 'Billing', subMenu: 'Billing Activity List', values: [WL_POL_ID], captureCount: 5 },
-    { screenNo: 15, name: 'Complex Policy Change - Movement Inquiry', mainMenu: 'Complex Policy Change', subMenu: 'Movement Inquiry', values: [WL_POL_ID], captureCount: 5 },
-    { screenNo: 16, name: 'Policy History - APL History List', mainMenu: 'Policy History', subMenu: 'APL History', values: [APL_POLICY_ID], captureCount: 5 },
-    { screenNo: 17, name: 'Policy History - Change History List', mainMenu: 'Policy History', subMenu: 'Change History List', values: [CHANGE_HIST_POLICY_ID], captureCount: 6 },
-    { screenNo: 18, name: 'Policy History - Loan Detail List', mainMenu: 'Policy History', subMenu: 'Loan Detail List', values: [LOAN_DETAIL_POLICY_ID], captureCount: 6 },
-    { screenNo: 19, name: 'Policy Inquiry - Inquiry Coverage Premiums', mainMenu: 'Policy Inquiry', subMenu: 'Inquiry - Coverage Premiums', values: [WL_POL_ID], captureCount: 6 },
-    { screenNo: 20, name: 'Policy Inquiry - Inquiry Loan APL APS Manual PS Judgment', mainMenu: 'Policy Inquiry', subMenu: 'Inquiry-Loan/APL/APS/Manual PS Judgment', subMenuAliases: ['Inquiry - Loan/APL/APS/Manual PS Judgment', 'Inquiry-Loan / APL / APS / Manual PS Judgment', 'Policy Loan Quote, APL or APS Judgment', 'Manual PS Judgment'], values: [WL_POL_ID], captureCount: 6 }
-  ];
-
-  const selectedScreenNumbers = parseSelectedScreens(process.env.SELECTED_SCREENS || '1-20');
-  const selectedSet = new Set(selectedScreenNumbers);
-  console.log(`SELECTED SCREENS: ${selectedScreenNumbers.join(', ')}`);
-
-  const screenResults = [];
-  for (const screen of screens) {
-    if (!selectedSet.has(screen.screenNo)) {
-      screenResults.push({
-        screenNo: screen.screenNo,
-        name: screen.name,
-        input: maskSummaryInput(screen.values),
-        status: 'SKIPPED',
-        detail: 'Not selected for this execution.',
-        durationSeconds: 0
-      });
-      continue;
-    }
-    // Use a fresh menu frame. The prior inquiry replaces the old frame tree.
-    const currentAppFrame = await findAppFrame(page);
-    screenResults.push(await runInquiryScreen(page, currentAppFrame, screen));
-  }
-
-  const counts = {
-    available: screens.length,
-    selected: selectedScreenNumbers.length,
-    passed: screenResults.filter((r) => r.status === 'PASSED').length,
-    noRecords: screenResults.filter((r) => r.status === 'NO_RECORDS').length,
-    failed: screenResults.filter((r) => r.status === 'FAILED').length,
-    skipped: screenResults.filter((r) => r.status === 'SKIPPED').length
-  };
-  const summary = {
-    generatedAt: new Date().toISOString(),
-    appUrl: BASE_URL,
-    counts,
-    screens: screenResults
-  };
-  fs.writeFileSync(`${SCREENSHOT_DIR}/screen-summary.json`, JSON.stringify(summary, null, 2), 'utf8');
-  fs.writeFileSync(
-    `${SCREENSHOT_DIR}/screen-summary.txt`,
-    [`Screen Execution Summary`, `Selected: ${counts.selected} / ${counts.available}`, `Passed: ${counts.passed}`, `No Records: ${counts.noRecords}`, `Failed: ${counts.failed}`, `Skipped: ${counts.skipped}`, '',
-      ...screenResults.map((r) => `${String(r.screenNo).padStart(2, '0')} | ${r.status} | ${r.name} | Input: ${r.input} | ${r.detail}`)
-    ].join('\n'),
-    'utf8'
-  );
-
-  console.log(`SCREEN SUMMARY: selected=${counts.selected}/${counts.available}, passed=${counts.passed}, noRecords=${counts.noRecords}, failed=${counts.failed}, skipped=${counts.skipped}`);
-  for (const result of screenResults) console.log(`SCREEN RESULT ${String(result.screenNo).padStart(2, '0')}: ${result.status} - ${result.name}`);
-
-  // Run all 20 screens first. Mark the test failed only after the full summary is written.
-  expect(screenResults.filter((r) => r.status === 'FAILED'), 'One or more Ingenium screens failed. See screen-summary.json and screenshot-report.html.').toEqual([]);
-  console.log('ALL SELECTED NON-SSO SCREEN FLOWS COMPLETED WITH SUMMARY');
-});
+}
