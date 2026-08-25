@@ -1,6 +1,6 @@
 import { defineConfig } from '@playwright/test';
 
-const requestedWorkers = Number(process.env.PLAYWRIGHT_WORKERS || '10');
+const requestedWorkers = Number(process.env.PLAYWRIGHT_WORKERS || '5');
 const workerCount = Number.isFinite(requestedWorkers)
   ? Math.max(1, Math.min(10, requestedWorkers))
   : 10;
