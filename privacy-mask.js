@@ -1,8 +1,8 @@
-// Privacy-first screenshot masking for Ingenium.
-// This changes screenshot rendering only; normal page processing is restored afterward.
+// Screenshot-only privacy masking for Ingenium.
+// Sensitive values are blurred for capture and the page is restored immediately afterward.
 
-const MASK_STYLE_ID = '__ingenium_privacy_mask_style__';
-const MASK_CLASS = '__ingenium_sensitive_value__';
+const MASK_STYLE_ID = '__ingenium_privacy_blur_style__';
+const MASK_CLASS = '__ingenium_sensitive_blur__';
 
 async function installMaskInFrame(frame) {
   await frame.evaluate(({ styleId, maskClass }) => {
@@ -11,74 +11,76 @@ async function installMaskInFrame(frame) {
     const style = document.createElement('style');
     style.id = styleId;
     style.textContent = `
-      .${maskClass},
-      .${maskClass} *,
-      input:not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="image"]),
-      textarea,
-      select,
-      option {
-        color: transparent !important;
-        text-shadow: none !important;
-        caret-color: transparent !important;
-        background-image: none !important;
-      }
       .${maskClass} {
-        position: relative !important;
-        filter: none !important;
+        filter: blur(7px) !important;
+        -webkit-filter: blur(7px) !important;
+        user-select: none !important;
+        opacity: 0.82 !important;
       }
-      .${maskClass}::after,
-      input:not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="image"])::after,
-      textarea::after,
-      select::after {
-        content: "████████" !important;
-        color: #111 !important;
-        background: #111 !important;
-        border-radius: 2px !important;
-        position: absolute !important;
-        inset: 1px !important;
-        z-index: 2147483647 !important;
+
+      input.${maskClass},
+      textarea.${maskClass},
+      select.${maskClass} {
+        color: transparent !important;
+        text-shadow: 0 0 9px rgba(30, 30, 30, 0.95) !important;
+        caret-color: transparent !important;
+        background-color: rgba(210, 210, 210, 0.75) !important;
       }
     `;
     (document.head || document.documentElement).appendChild(style);
 
-    const isInteractiveLabel = (element) =>
-      element.closest('a,button,[role="button"],nav,.menu,.navigation') !== null;
+    const isControl = (element) =>
+      element.closest('a, button, [role="button"], nav, .menu, .navigation') !== null;
 
     const mark = (element) => {
-      if (!element || isInteractiveLabel(element)) return;
+      if (!element || isControl(element)) return;
       element.classList.add(maskClass);
     };
 
-    // All entered identifiers and selected values.
+    // Always blur values entered in application fields.
     document.querySelectorAll(
-      'input:not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="image"]), textarea, select'
+      'input:not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="image"]):not([type="checkbox"]):not([type="radio"]), textarea, select'
     ).forEach(mark);
 
-    // Legacy Ingenium result pages are table/Form based. Mask data cells while preserving links and buttons.
-    document.querySelectorAll('td, th[scope="row"], .fieldValue, .field-value, .value, .data, [data-value]').forEach((element) => {
-      if (element.querySelector('a,button,input[type="button"],input[type="submit"],input[type="image"]')) return;
-      mark(element);
-    });
+    // Common Ingenium value containers. Do not blanket-mask every table cell.
+    document.querySelectorAll(
+      '.fieldValue, .field-value, .dataValue, .data-value, [data-value], [class*="value" i]'
+    ).forEach(mark);
 
-    // Mask leaf text nodes that look like IDs, dates, money, e-mail, phone, codes, or returned values.
-    const valuePattern = /(?:\d|@|¥|￥|\$|\b(?:JPY|USD|POL|CLM|AGT|CLI)\b)/i;
-    document.querySelectorAll('span,div,p,label,font,b,strong').forEach((element) => {
-      if (element.children.length !== 0 || isInteractiveLabel(element)) return;
+    // Blur leaf values containing identifiers, dates, amounts, e-mail addresses, phone data or codes.
+    const valuePattern = /(?:\d{2,}|@|¥|￥|\$|\b(?:JPY|USD|POL|CLM|AGT|CLI)\b)/i;
+    document.querySelectorAll('td, th, span, div, p, label, font, b, strong').forEach((element) => {
+      if (element.children.length !== 0 || isControl(element)) return;
       const text = (element.textContent || '').trim();
       if (text && valuePattern.test(text)) mark(element);
     });
 
-    // Mask common sensitive fields even when returned values contain no digits.
-    const sensitiveLabels = /owner|client|insured|beneficiary|agent|policy|claim|address|name|birth|gender|phone|email|premium|amount|currency|account|bank|status|date|location|country|product|coverage|loan|remittance/i;
+    // Blur value cells following sensitive labels, including text-only values such as names/status/country.
+    const sensitiveLabel = /owner|client|insured|beneficiary|agent|policy|claim|address|name|birth|gender|phone|email|premium|amount|currency|account|bank|status|date|location|country|product|coverage|loan|remittance|company|user id|batch number|processing date|application status/i;
+
     document.querySelectorAll('tr').forEach((row) => {
       const cells = [...row.querySelectorAll(':scope > th, :scope > td')];
-      for (let i = 0; i < cells.length; i++) {
-        const labelText = (cells[i].textContent || '').trim();
-        if (!sensitiveLabels.test(labelText)) continue;
-        // Mask following value cell and alternating value cells in the same row.
-        if (cells[i + 1]) mark(cells[i + 1]);
-        for (let j = i + 1; j < cells.length; j += 2) mark(cells[j]);
+      for (let index = 0; index < cells.length; index++) {
+        const label = (cells[index].textContent || '').trim();
+        if (!sensitiveLabel.test(label)) continue;
+        const next = cells[index + 1];
+        if (next && !next.querySelector('a, button, input[type="button"], input[type="submit"], input[type="image"]')) {
+          mark(next);
+        }
       }
+    });
+
+    // Support label/value layouts that are not table rows.
+    document.querySelectorAll('label, span, div, font, b, strong').forEach((labelElement) => {
+      const label = (labelElement.textContent || '').trim();
+      if (!label || !sensitiveLabel.test(label) || isControl(labelElement)) return;
+
+      const targetId = labelElement.getAttribute('for');
+      if (targetId) mark(document.getElementById(targetId));
+
+      let sibling = labelElement.nextElementSibling;
+      while (sibling && ['BR'].includes(sibling.tagName)) sibling = sibling.nextElementSibling;
+      if (sibling && !isControl(sibling)) mark(sibling);
     });
   }, { styleId: MASK_STYLE_ID, maskClass: MASK_CLASS });
 }
@@ -86,23 +88,28 @@ async function installMaskInFrame(frame) {
 async function removeMaskFromFrame(frame) {
   await frame.evaluate(({ styleId, maskClass }) => {
     document.getElementById(styleId)?.remove();
-    document.querySelectorAll(`.${maskClass}`).forEach((element) => element.classList.remove(maskClass));
+    document.querySelectorAll(`.${maskClass}`).forEach((element) => {
+      element.classList.remove(maskClass);
+    });
   }, { styleId: MASK_STYLE_ID, maskClass: MASK_CLASS });
 }
 
 export async function captureMaskedScreenshot(page, options) {
   for (const frame of page.frames()) {
-    try { await installMaskInFrame(frame); } catch {}
+    try {
+      await installMaskInFrame(frame);
+    } catch {}
   }
 
-  // Allow masking styles to render before capture.
-  await page.waitForTimeout(250);
+  await page.waitForTimeout(300);
 
   try {
     await page.screenshot(options);
   } finally {
     for (const frame of page.frames()) {
-      try { await removeMaskFromFrame(frame); } catch {}
+      try {
+        await removeMaskFromFrame(frame);
+      } catch {}
     }
   }
 }

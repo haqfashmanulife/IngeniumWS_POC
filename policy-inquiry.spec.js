@@ -283,6 +283,29 @@ async function collectVisiblePageText(page) {
   return chunks.join('\n');
 }
 
+async function returnToApplicationMenu(page, screenName) {
+  console.log(`Returning to application menu after ${screenName}`);
+  try {
+    await clickOkFromAnyFrame(page, `return from ${screenName}`);
+  } catch (error) {
+    console.log(`Return OK was not available for ${screenName}: ${error.message}`);
+  }
+  await page.waitForTimeout(5000);
+  let menuFrame = await findAppFrame(page).catch(() => null);
+  if (menuFrame) {
+    console.log(`Application menu restored after ${screenName}`);
+    return menuFrame;
+  }
+  try {
+    await clickOkFromAnyFrame(page, `second return from ${screenName}`);
+    await page.waitForTimeout(5000);
+  } catch {}
+  menuFrame = await findAppFrame(page).catch(() => null);
+  if (!menuFrame) throw new Error(`Application menu was not restored after ${screenName}`);
+  console.log(`Application menu restored after second close for ${screenName}`);
+  return menuFrame;
+}
+
 async function runInquiryScreen(page, appFrame, screen) {
   const startedAt = new Date();
   const result = {
@@ -314,6 +337,7 @@ async function runInquiryScreen(page, appFrame, screen) {
     }
 
     await scrollAndCapture(page, screen, screen.values.join('-'), screen.captureCount || 5);
+    await returnToApplicationMenu(page, screen.name);
     console.log(`========== Completed screen: ${screen.name} (${result.status}) ==========`);
   } catch (error) {
     result.status = 'FAILED';
@@ -323,6 +347,9 @@ async function runInquiryScreen(page, appFrame, screen) {
       path: `${SCREENSHOT_DIR}/screen-${String(screen.screenNo).padStart(2, '0')}-${sanitizeName(screen.name)}-failed.png`,
       fullPage: true
     }).catch(() => {});
+    await returnToApplicationMenu(page, screen.name).catch((recoveryError) => {
+      console.log(`Menu recovery failed after ${screen.name}: ${recoveryError.message}`);
+    });
   }
 
   result.durationSeconds = Math.round((Date.now() - startedAt.getTime()) / 1000);
@@ -493,8 +520,8 @@ test('Ingenium selectable non-SSO multi-screen flow' , async ({ page, context })
       });
       continue;
     }
-    // Re-discover the application frame before each selected screen so one failed screen does not stop later screens.
-    const currentAppFrame = await findAppFrame(page).catch(() => appFrame);
+    // Use a fresh menu frame. The prior inquiry replaces the old frame tree.
+    const currentAppFrame = await findAppFrame(page);
     screenResults.push(await runInquiryScreen(page, currentAppFrame, screen));
   }
 
