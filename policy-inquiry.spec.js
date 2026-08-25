@@ -245,158 +245,55 @@ async function scrollAndCapture(page, screen, idValue, count = 5) {
   }
 }
 
-
-function parseSelectedScreens(selection) {
-  const source = String(selection || '1-20').trim();
-  if (/^all$/i.test(source)) return Array.from({ length: 20 }, (_, i) => i + 1);
-  const selected = new Set();
-  for (const token of source.split(',').map((item) => item.trim()).filter(Boolean)) {
-    const range = token.match(/^(\d+)\s*-\s*(\d+)$/);
-    if (range) {
-      const start = Number(range[1]);
-      const end = Number(range[2]);
-      if (start > end) throw new Error(`Invalid screen range: ${token}`);
-      for (let value = start; value <= end; value++) selected.add(value);
-    } else if (/^\d+$/.test(token)) {
-      selected.add(Number(token));
-    } else {
-      throw new Error(`Invalid screen selection token: ${token}`);
-    }
-  }
-  const values = [...selected].sort((a, b) => a - b);
-  if (!values.length) throw new Error('No screens were selected.');
-  const invalid = values.filter((value) => value < 1 || value > 20);
-  if (invalid.length) throw new Error(`Screen numbers must be between 1 and 20. Invalid: ${invalid.join(', ')}`);
-  return values;
-}
-
-async function collectVisiblePageText(page) {
-  const chunks = [];
-  for (const frame of page.frames()) {
-    try {
-      const text = await frame.locator('body').innerText({ timeout: 3000 });
-      if (text && text.trim()) chunks.push(text.trim());
-    } catch {}
-  }
-  return chunks.join('\n');
-}
-
 async function runInquiryScreen(page, appFrame, screen) {
-  const startedAt = new Date();
-  const result = {
-    screenNo: screen.screenNo,
-    name: screen.name,
-    input: screen.values.join(', '),
-    status: 'FAILED',
-    detail: '',
-    durationSeconds: 0
-  };
-
   console.log(`========== Running screen: ${screen.name} ==========`);
-  try {
-    await clickMenuPath(page, appFrame, screen.mainMenu, screen.subMenu, screen.subMenuAliases || []);
-    await fillVisibleInputs(page, screen.name, screen.values);
-    await page.screenshot({ path: `${SCREENSHOT_DIR}/screen-${String(screen.screenNo).padStart(2, '0')}-${sanitizeName(screen.name)}-before-ok.png`, fullPage: true });
-    await clickOkFromAnyFrame(page, screen.name);
-    await page.waitForTimeout(screen.waitAfterOkMs || 7000);
-
-    const resultText = await collectVisiblePageText(page);
-    const noRecordsPattern = /NO\s+RECORDS?\s+(?:FOUND\s+)?TO\s+DISPLAY|NO\s+RECORDS?\s+FOUND|NO\s+DATA\s+FOUND|NO\s+MATCHING\s+RECORDS?/i;
-    if (noRecordsPattern.test(resultText)) {
-      result.status = 'NO_RECORDS';
-      result.detail = 'Screen opened successfully, but the selected input returned no records to display.';
-      console.log(`NO_RECORDS detected for ${screen.name}`);
-    } else {
-      result.status = 'PASSED';
-      result.detail = 'Screen completed and result page was displayed.';
-    }
-
-    await scrollAndCapture(page, screen, screen.values.join('-'), screen.captureCount || 5);
-    console.log(`========== Completed screen: ${screen.name} (${result.status}) ==========`);
-  } catch (error) {
-    result.status = 'FAILED';
-    result.detail = String(error && error.message ? error.message : error).replace(/\s+/g, ' ').slice(0, 700);
-    console.log(`SCREEN FAILED: ${screen.name}: ${result.detail}`);
-    await page.screenshot({
-      path: `${SCREENSHOT_DIR}/screen-${String(screen.screenNo).padStart(2, '0')}-${sanitizeName(screen.name)}-failed.png`,
-      fullPage: true
-    }).catch(() => {});
-  }
-
-  result.durationSeconds = Math.round((Date.now() - startedAt.getTime()) / 1000);
-  return result;
+  await clickMenuPath(page, appFrame, screen.mainMenu, screen.subMenu, screen.subMenuAliases || []);
+  await fillVisibleInputs(page, screen.name, screen.values);
+  await page.screenshot({ path: `${SCREENSHOT_DIR}/screen-${String(screen.screenNo).padStart(2, '0')}-${sanitizeName(screen.name)}-before-ok.png`, fullPage: true });
+  await clickOkFromAnyFrame(page, screen.name);
+  await page.waitForTimeout(screen.waitAfterOkMs || 7000);
+  await scrollAndCapture(page, screen, screen.values.join('-'), screen.captureCount || 5);
+  console.log(`========== Completed screen: ${screen.name} ==========`);
 }
 
-async function applicationCredentialLogin(page) {
-  const company = process.env.COMPANY || 'Manulife';
-  const username = process.env.APP_USERNAME || process.env.APP_LOGIN_USERNAME || '';
-  const password = process.env.APP_PASSWORD || process.env.APP_LOGIN_PASSWORD || '';
-
-  if (!username || !password) {
-    throw new Error('Non-SSO login requires APP_USERNAME and APP_PASSWORD from Jenkins credentials.');
-  }
-
+async function optionalCredentialLogin(page) {
+  // U2 SSO behavior:
+  // 1. Browser/domain authentication is handled by Playwright httpCredentials and/or curl SPNEGO cookie bridge.
+  // 2. Click English Sign On.
+  // 3. Ingenium shows Sign-On Connect with User Status = Connected.
+  // 4. Click OK. Do not use GOCC / ingenium application credentials for U2 SSO.
   const english = page.getByText('English Sign On', { exact: true });
   if (await english.isVisible().catch(() => false)) {
     await english.click();
     console.log('Clicked English Sign On');
     await page.waitForTimeout(5000);
+  } else {
+    console.log('English Sign On link not visible. Continuing to Sign-On Connect or app frame.');
   }
 
-  const loginFrame = await findFrame(page, async (frame) =>
-    await frame.locator('input[type="password"]:visible').count() > 0,
-    15,
-    1500
-  );
-  console.log('Non-SSO application login frame found');
+  await page.screenshot({ path: `${SCREENSHOT_DIR}/03-after-english-sign-on.png`, fullPage: true });
+  const signOnText = await page.locator('body').innerText({ timeout: 5000 }).catch(() => '');
+  fs.writeFileSync(`${SCREENSHOT_DIR}/03-after-english-sign-on-text.txt`, signOnText, 'utf8');
 
-  const usernameCandidates = [
-    loginFrame.locator('input[type="text"]:visible'),
-    loginFrame.locator('input:not([type]):visible'),
-    loginFrame.locator('input[name*="user" i]:visible'),
-    loginFrame.locator('input[id*="user" i]:visible'),
-    loginFrame.locator('input[name*="login" i]:visible')
-  ];
-
-  let usernameField = null;
-  for (const candidate of usernameCandidates) {
-    if (await candidate.count() > 0) {
-      usernameField = candidate.first();
-      break;
-    }
+  const connectVisible = page.getByText(/Sign-On Connect|User Status|Connected/i);
+  if (await connectVisible.first().isVisible().catch(() => false)) {
+    console.log('Sign-On Connect page visible. Clicking OK to enter Ingenium application.');
+    await clickOkFromAnyFrame(page, 'Sign-On Connect');
+    await page.waitForTimeout(7000);
+    await page.screenshot({ path: `${SCREENSHOT_DIR}/04-after-signon-connect-ok.png`, fullPage: true });
+    return;
   }
-  if (!usernameField) throw new Error('Visible application username field was not found.');
-
-  await usernameField.fill(username, { timeout: 10000 });
-  await loginFrame.locator('input[type="password"]:visible').first().fill(password, { timeout: 10000 });
-
-  const companySelect = loginFrame.locator('select').first();
-  if (await companySelect.count() > 0) {
-    await companySelect.selectOption({ label: company }).catch(async () => {
-      await companySelect.selectOption(company).catch(() => {});
-    });
-  }
-
-  const submitCandidates = [
-    loginFrame.getByRole('button', { name: /submit/i }),
-    loginFrame.locator('input[type="submit"]'),
-    loginFrame.locator('input[value*="Submit" i]'),
-    loginFrame.locator('input[type="image"][alt*="submit" i]')
-  ];
-  await clickFirstAvailable(page, submitCandidates, 'Submit Login');
-  console.log('Clicked Submit Login');
-  await page.waitForTimeout(6000);
-  await page.screenshot({ path: `${SCREENSHOT_DIR}/03-after-credential-login.png`, fullPage: true });
 
   try {
-    await clickOkFromAnyFrame(page, 'post-login popup');
+    await clickOkFromAnyFrame(page, 'possible Sign-On Connect');
+    await page.waitForTimeout(7000);
+    await page.screenshot({ path: `${SCREENSHOT_DIR}/04-after-possible-signon-ok.png`, fullPage: true });
   } catch {
-    console.log('No post-login popup was displayed.');
+    console.log('No Sign-On Connect OK button found. Continuing to app frame detection.');
   }
-  await page.waitForTimeout(6000);
 }
 
-test('Ingenium selectable non-SSO multi-screen flow' , async ({ page, context }) => {
+test('U2 SSO cookie bridge plus Ingenium 20 screen flow', async ({ page, context }) => {
   test.setTimeout(3600000);
   ensureScreenshotDir();
 
@@ -427,11 +324,14 @@ test('Ingenium selectable non-SSO multi-screen flow' , async ({ page, context })
     }
   });
 
-  console.log('START INGENIUM SELECTABLE NON-SSO SCREEN FLOW');
+  console.log('START U2 SSO PLUS 20 SCREEN FLOW');
   console.log('BASE_URL:', BASE_URL);
-  console.log('BROWSER: Chromium on Linux');
+  console.log('BROWSER: Microsoft Edge on Linux');
+  console.log('KRB_REALM:', process.env.KRB_REALM || 'MFCGD.COM');
+  console.log('COOKIE_JAR:', process.env.COOKIE_JAR || 'not-set');
   Object.entries(required).forEach(([k, v]) => console.log(`${k}:`, v));
 
+  await loadCurlCookiesIntoContext(context);
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 120000 });
   await page.waitForTimeout(5000);
   await page.screenshot({ path: `${SCREENSHOT_DIR}/01-launch.png`, fullPage: true });
@@ -440,6 +340,11 @@ test('Ingenium selectable non-SSO multi-screen flow' , async ({ page, context })
   fs.writeFileSync(`${SCREENSHOT_DIR}/01-launch-text.txt`, pageText, 'utf8');
   fs.writeFileSync(`${SCREENSHOT_DIR}/response-log.txt`, responseLines.join('\n'), 'utf8');
 
+  const spnegoError = page.getByText('SPNEGO authentication is not supported on this client.');
+  if (await spnegoError.isVisible().catch(() => false)) {
+    await page.screenshot({ path: `${SCREENSHOT_DIR}/spnego-not-supported.png`, fullPage: true });
+    throw new Error('SPNEGO page still displayed after cookie bridge.');
+  }
 
   const englishSignOn = page.getByText('English Sign On', { exact: true });
   if (await englishSignOn.isVisible().catch(() => false)) {
@@ -447,7 +352,7 @@ test('Ingenium selectable non-SSO multi-screen flow' , async ({ page, context })
     await page.screenshot({ path: `${SCREENSHOT_DIR}/02-english-sign-on-visible.png`, fullPage: true });
   }
 
-  await applicationCredentialLogin(page);
+  await optionalCredentialLogin(page);
   const appFrame = await findAppFrame(page);
   console.log('Application menu frame ready');
 
@@ -474,55 +379,6 @@ test('Ingenium selectable non-SSO multi-screen flow' , async ({ page, context })
     { screenNo: 20, name: 'Policy Inquiry - Inquiry Loan APL APS Manual PS Judgment', mainMenu: 'Policy Inquiry', subMenu: 'Inquiry-Loan/APL/APS/Manual PS Judgment', subMenuAliases: ['Inquiry - Loan/APL/APS/Manual PS Judgment', 'Inquiry-Loan / APL / APS / Manual PS Judgment', 'Policy Loan Quote, APL or APS Judgment', 'Manual PS Judgment'], values: [WL_POL_ID], captureCount: 6 }
   ];
 
-  const selectedScreenNumbers = parseSelectedScreens(process.env.SELECTED_SCREENS || '1-20');
-  const selectedSet = new Set(selectedScreenNumbers);
-  console.log(`SELECTED SCREENS: ${selectedScreenNumbers.join(', ')}`);
-
-  const screenResults = [];
-  for (const screen of screens) {
-    if (!selectedSet.has(screen.screenNo)) {
-      screenResults.push({
-        screenNo: screen.screenNo,
-        name: screen.name,
-        input: screen.values.join(', '),
-        status: 'SKIPPED',
-        detail: 'Not selected for this execution.',
-        durationSeconds: 0
-      });
-      continue;
-    }
-    // Re-discover the application frame before each selected screen so one failed screen does not stop later screens.
-    const currentAppFrame = await findAppFrame(page).catch(() => appFrame);
-    screenResults.push(await runInquiryScreen(page, currentAppFrame, screen));
-  }
-
-  const counts = {
-    available: screens.length,
-    selected: selectedScreenNumbers.length,
-    passed: screenResults.filter((r) => r.status === 'PASSED').length,
-    noRecords: screenResults.filter((r) => r.status === 'NO_RECORDS').length,
-    failed: screenResults.filter((r) => r.status === 'FAILED').length,
-    skipped: screenResults.filter((r) => r.status === 'SKIPPED').length
-  };
-  const summary = {
-    generatedAt: new Date().toISOString(),
-    appUrl: BASE_URL,
-    counts,
-    screens: screenResults
-  };
-  fs.writeFileSync(`${SCREENSHOT_DIR}/screen-summary.json`, JSON.stringify(summary, null, 2), 'utf8');
-  fs.writeFileSync(
-    `${SCREENSHOT_DIR}/screen-summary.txt`,
-    [`Screen Execution Summary`, `Selected: ${counts.selected} / ${counts.available}`, `Passed: ${counts.passed}`, `No Records: ${counts.noRecords}`, `Failed: ${counts.failed}`, `Skipped: ${counts.skipped}`, '',
-      ...screenResults.map((r) => `${String(r.screenNo).padStart(2, '0')} | ${r.status} | ${r.name} | Input: ${r.input} | ${r.detail}`)
-    ].join('\n'),
-    'utf8'
-  );
-
-  console.log(`SCREEN SUMMARY: selected=${counts.selected}/${counts.available}, passed=${counts.passed}, noRecords=${counts.noRecords}, failed=${counts.failed}, skipped=${counts.skipped}`);
-  for (const result of screenResults) console.log(`SCREEN RESULT ${String(result.screenNo).padStart(2, '0')}: ${result.status} - ${result.name}`);
-
-  // Run all 20 screens first. Mark the test failed only after the full summary is written.
-  expect(screenResults.filter((r) => r.status === 'FAILED'), 'One or more Ingenium screens failed. See screen-summary.json and screenshot-report.html.').toEqual([]);
-  console.log('ALL SELECTED NON-SSO SCREEN FLOWS COMPLETED WITH SUMMARY');
+  for (const screen of screens) await runInquiryScreen(page, appFrame, screen);
+  console.log('ALL U2 SSO 20 SCREEN FLOWS COMPLETED SUCCESSFULLY');
 });
