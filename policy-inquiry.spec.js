@@ -294,7 +294,24 @@ async function optionalCredentialLogin(page) {
   }
 }
 
-test('U2 SSO cookie bridge plus Ingenium 20 screen flow', async ({ page, context }) => {
+function parseSelectedScreens(value) {
+  const selected = new Set();
+  for (const token of String(value || '1-20').split(',').map((item) => item.trim()).filter(Boolean)) {
+    const range = token.match(/^(\d+)\s*-\s*(\d+)$/);
+    if (range) {
+      const start = Number(range[1]);
+      const end = Number(range[2]);
+      if (start > end) throw new Error(`Invalid screen range: ${token}`);
+      for (let number = start; number <= end; number++) selected.add(number);
+    } else if (/^\d+$/.test(token)) selected.add(Number(token));
+    else throw new Error(`Invalid screen token: ${token}`);
+  }
+  const values = [...selected].sort((a, b) => a - b);
+  if (!values.length || values.some((number) => number < 1 || number > 20)) throw new Error('Selected screens must be between 1 and 20.');
+  return values;
+}
+
+test('Non-SSO Ingenium selected screen flow', async ({ page }) => {
   test.setTimeout(3600000);
   ensureScreenshotDir();
 
@@ -325,14 +342,10 @@ test('U2 SSO cookie bridge plus Ingenium 20 screen flow', async ({ page, context
     }
   });
 
-  console.log('START U2 SSO PLUS 20 SCREEN FLOW');
+  console.log('START NON-SSO SELECTED SCREEN FLOW');
   console.log('BASE_URL:', BASE_URL);
-  console.log('BROWSER: Microsoft Edge on Linux');
-  console.log('KRB_REALM:', process.env.KRB_REALM || 'MFCGD.COM');
-  console.log('COOKIE_JAR:', process.env.COOKIE_JAR || 'not-set');
-  Object.entries(required).forEach(([k, v]) => console.log(`${k}:`, v));
-
-  await loadCurlCookiesIntoContext(context);
+  console.log('BROWSER: Chromium on Linux');
+  Object.keys(required).forEach((key) => console.log(`${key}: <masked>`));
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 120000 });
   await page.waitForTimeout(5000);
   await captureMaskedScreenshot(page, { path: `${SCREENSHOT_DIR}/01-launch.png`, fullPage: true });
@@ -344,7 +357,7 @@ test('U2 SSO cookie bridge plus Ingenium 20 screen flow', async ({ page, context
   const spnegoError = page.getByText('SPNEGO authentication is not supported on this client.');
   if (await spnegoError.isVisible().catch(() => false)) {
     await captureMaskedScreenshot(page, { path: `${SCREENSHOT_DIR}/spnego-not-supported.png`, fullPage: true });
-    throw new Error('SPNEGO page still displayed after cookie bridge.');
+    throw new Error('SPNEGO page displayed during Non-SSO execution.');
   }
 
   const englishSignOn = page.getByText('English Sign On', { exact: true });
@@ -380,6 +393,10 @@ test('U2 SSO cookie bridge plus Ingenium 20 screen flow', async ({ page, context
     { screenNo: 20, name: 'Policy Inquiry - Inquiry Loan APL APS Manual PS Judgment', mainMenu: 'Policy Inquiry', subMenu: 'Inquiry-Loan/APL/APS/Manual PS Judgment', subMenuAliases: ['Inquiry - Loan/APL/APS/Manual PS Judgment', 'Inquiry-Loan / APL / APS / Manual PS Judgment', 'Policy Loan Quote, APL or APS Judgment', 'Manual PS Judgment'], values: [WL_POL_ID], captureCount: 6 }
   ];
 
-  for (const screen of screens) await runInquiryScreen(page, appFrame, screen);
+  const selectedScreens = parseSelectedScreens(process.env.SELECTED_SCREENS);
+  console.log(`Selected Non-SSO screens: ${selectedScreens.join(', ')}`);
+  for (const screen of screens.filter((item) => selectedScreens.includes(item.screenNo))) {
+    await runInquiryScreen(page, appFrame, screen);
+  }
   console.log('ALL U2 SSO 20 SCREEN FLOWS COMPLETED SUCCESSFULLY');
 });
