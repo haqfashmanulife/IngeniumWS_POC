@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import fs from 'fs';
+import { captureMaskedScreenshot, maskedArtifactValue } from './privacy-mask.js';
 
 const SCREENSHOT_DIR = 'screenshots';
 
@@ -68,7 +69,7 @@ async function findFrame(page, predicate, retries = 20, delay = 1500) {
     console.log(`Frame not ready (${i + 1}/${retries})`);
     await page.waitForTimeout(delay);
   }
-  await page.screenshot({ path: `${SCREENSHOT_DIR}/frame-not-found.png`, fullPage: true });
+  await captureMaskedScreenshot(page, { path: `${SCREENSHOT_DIR}/frame-not-found.png`, fullPage: true });
   throw new Error('Frame not found for requested predicate');
 }
 
@@ -93,7 +94,7 @@ async function safeClick(page, locator, label = 'element', retries = 6) {
       await page.waitForTimeout(1500);
     }
   }
-  await page.screenshot({ path: `${SCREENSHOT_DIR}/click-failed-${sanitizeName(label)}.png`, fullPage: true });
+  await captureMaskedScreenshot(page, { path: `${SCREENSHOT_DIR}/click-failed-${sanitizeName(label)}.png`, fullPage: true });
   throw new Error(`Failed to click ${label}`);
 }
 
@@ -173,7 +174,7 @@ async function clickFirstAvailable(page, locators, label) {
       console.log(`Locator strategy failed for ${label}: ${error.message}`);
     }
   }
-  await page.screenshot({ path: `${SCREENSHOT_DIR}/click-unavailable-${sanitizeName(label)}.png`, fullPage: true });
+  await captureMaskedScreenshot(page, { path: `${SCREENSHOT_DIR}/click-unavailable-${sanitizeName(label)}.png`, fullPage: true });
   throw lastError || new Error(`Locator not found for ${label}`);
 }
 
@@ -237,7 +238,7 @@ async function scrollAndCapture(page, screen, idValue, count = 5) {
   }
   await page.waitForTimeout(1000);
   for (let i = 0; i < count; i++) {
-    await page.screenshot({ path: `${SCREENSHOT_DIR}/${prefix}-${idValue}-${i + 1}.png`, fullPage: true });
+    await captureMaskedScreenshot(page, { path: `${SCREENSHOT_DIR}/${prefix}-${maskedArtifactValue()}-${i + 1}.png`, fullPage: true });
     for (const frame of page.frames()) {
       try { await frame.evaluate(() => window.scrollBy(0, window.innerHeight * 0.85)); } catch {}
     }
@@ -249,10 +250,10 @@ async function runInquiryScreen(page, appFrame, screen) {
   console.log(`========== Running screen: ${screen.name} ==========`);
   await clickMenuPath(page, appFrame, screen.mainMenu, screen.subMenu, screen.subMenuAliases || []);
   await fillVisibleInputs(page, screen.name, screen.values);
-  await page.screenshot({ path: `${SCREENSHOT_DIR}/screen-${String(screen.screenNo).padStart(2, '0')}-${sanitizeName(screen.name)}-before-ok.png`, fullPage: true });
+  await captureMaskedScreenshot(page, { path: `${SCREENSHOT_DIR}/screen-${String(screen.screenNo).padStart(2, '0')}-${sanitizeName(screen.name)}-before-ok.png`, fullPage: true });
   await clickOkFromAnyFrame(page, screen.name);
   await page.waitForTimeout(screen.waitAfterOkMs || 7000);
-  await scrollAndCapture(page, screen, screen.values.join('-'), screen.captureCount || 5);
+  await scrollAndCapture(page, screen, maskedArtifactValue(), screen.captureCount || 5);
   console.log(`========== Completed screen: ${screen.name} ==========`);
 }
 
@@ -271,7 +272,7 @@ async function optionalCredentialLogin(page) {
     console.log('English Sign On link not visible. Continuing to Sign-On Connect or app frame.');
   }
 
-  await page.screenshot({ path: `${SCREENSHOT_DIR}/03-after-english-sign-on.png`, fullPage: true });
+  await captureMaskedScreenshot(page, { path: `${SCREENSHOT_DIR}/03-after-english-sign-on.png`, fullPage: true });
   const signOnText = await page.locator('body').innerText({ timeout: 5000 }).catch(() => '');
   fs.writeFileSync(`${SCREENSHOT_DIR}/03-after-english-sign-on-text.txt`, signOnText, 'utf8');
 
@@ -280,14 +281,14 @@ async function optionalCredentialLogin(page) {
     console.log('Sign-On Connect page visible. Clicking OK to enter Ingenium application.');
     await clickOkFromAnyFrame(page, 'Sign-On Connect');
     await page.waitForTimeout(7000);
-    await page.screenshot({ path: `${SCREENSHOT_DIR}/04-after-signon-connect-ok.png`, fullPage: true });
+    await captureMaskedScreenshot(page, { path: `${SCREENSHOT_DIR}/04-after-signon-connect-ok.png`, fullPage: true });
     return;
   }
 
   try {
     await clickOkFromAnyFrame(page, 'possible Sign-On Connect');
     await page.waitForTimeout(7000);
-    await page.screenshot({ path: `${SCREENSHOT_DIR}/04-after-possible-signon-ok.png`, fullPage: true });
+    await captureMaskedScreenshot(page, { path: `${SCREENSHOT_DIR}/04-after-possible-signon-ok.png`, fullPage: true });
   } catch {
     console.log('No Sign-On Connect OK button found. Continuing to app frame detection.');
   }
@@ -334,7 +335,7 @@ test('U2 SSO cookie bridge plus Ingenium 20 screen flow', async ({ page, context
   await loadCurlCookiesIntoContext(context);
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 120000 });
   await page.waitForTimeout(5000);
-  await page.screenshot({ path: `${SCREENSHOT_DIR}/01-launch.png`, fullPage: true });
+  await captureMaskedScreenshot(page, { path: `${SCREENSHOT_DIR}/01-launch.png`, fullPage: true });
 
   const pageText = await page.locator('body').innerText({ timeout: 5000 }).catch(() => '');
   fs.writeFileSync(`${SCREENSHOT_DIR}/01-launch-text.txt`, pageText, 'utf8');
@@ -342,14 +343,14 @@ test('U2 SSO cookie bridge plus Ingenium 20 screen flow', async ({ page, context
 
   const spnegoError = page.getByText('SPNEGO authentication is not supported on this client.');
   if (await spnegoError.isVisible().catch(() => false)) {
-    await page.screenshot({ path: `${SCREENSHOT_DIR}/spnego-not-supported.png`, fullPage: true });
+    await captureMaskedScreenshot(page, { path: `${SCREENSHOT_DIR}/spnego-not-supported.png`, fullPage: true });
     throw new Error('SPNEGO page still displayed after cookie bridge.');
   }
 
   const englishSignOn = page.getByText('English Sign On', { exact: true });
   if (await englishSignOn.isVisible().catch(() => false)) {
     console.log('English Sign On page visible');
-    await page.screenshot({ path: `${SCREENSHOT_DIR}/02-english-sign-on-visible.png`, fullPage: true });
+    await captureMaskedScreenshot(page, { path: `${SCREENSHOT_DIR}/02-english-sign-on-visible.png`, fullPage: true });
   }
 
   await optionalCredentialLogin(page);
